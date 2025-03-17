@@ -1,15 +1,20 @@
-import React, { createContext, useContext, useState, useMemo, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect, ReactNode, useRef } from 'react';
 import * as WebBrowser from 'expo-web-browser'; 
 import { useAuthRequest, exchangeCodeAsync, revokeAsync, ResponseType } from 'expo-auth-session'
 import { TokenResponse } from 'expo-auth-session/build/TokenRequest'
 import { Alert } from 'react-native';
+import * as AuthSession from 'expo-auth-session';
+import * as SecureStore from 'expo-secure-store';
 
 WebBrowser.maybeCompleteAuthSession();
 
 // AWS COGNITO configuration environment variables
-const clientId = process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID;
-const userPoolUri = process.env.EXPO_PUBLIC_USER_POOL_ID;
-const redirectUri = process.env.EXPO_PUBLIC_REDIRECT_URI;
+const clientId: string = process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID!;
+const userPoolUri: string = process.env.EXPO_PUBLIC_USER_POOL_ID!;
+// const redirectUri: string = process.env.EXPO_PUBLIC_REDIRECT_URI!;
+const redirectUri = AuthSession.makeRedirectUri();
+const hasCompletedOnboarding: boolean = false;
+const AUTH_TOKENS_KEY = 'auth_tokens';
 
 // Define the shape of our context
 interface AuthContextType {
@@ -17,6 +22,7 @@ interface AuthContextType {
   login: () => Promise<any>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
+  isLoading: boolean;
 }
 
 // Create the context with a default value
@@ -30,6 +36,7 @@ interface AuthProviderProps {
 // Provider component
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [authTokens, setAuthTokens] = useState<TokenResponse | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const discoveryDocument = useMemo(() => ({
     authorizationEndpoint: userPoolUri + '/oauth2/authorize',
@@ -47,28 +54,64 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     discoveryDocument
   );
 
+    // Load tokens from storage when the app starts
+    useEffect(() => {
+      const loadTokens = async () => {
+        try {
+          const tokensString = await SecureStore.getItemAsync(AUTH_TOKENS_KEY);
+          if (tokensString) {
+            const tokens = JSON.parse(tokensString);
+            
+            const expirationTime = tokens.issuedAt + tokens.expiresIn;
+            const isExpired = Date.now() / 1000 > expirationTime;
+            
+            if (!isExpired) {
+              setAuthTokens({
+                accessToken: tokens.accessToken,
+                refreshToken: tokens.refreshToken,
+                issuedAt: tokens.issuedAt,
+                expiresIn: tokens.expiresIn,
+              } as TokenResponse);
+            } else {
+              await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading auth tokens:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      loadTokens();
+    }, []);
+
   useEffect(() => {
+
     const exchangeFn = async (exchangeTokenReq: any) => {
-      try {
+      try {        
         const exchangeTokenResponse = await exchangeCodeAsync(
           exchangeTokenReq,
           discoveryDocument
         );
-        setAuthTokens(exchangeTokenResponse);
+        
+        await saveAndSetAuthTokens(exchangeTokenResponse);
+        console.log("Auth Tokens: " + authTokens);
       } catch (error) {
-        console.error(error);
+        console.error("Token exchange failed:", error);
       }
     };
     
     if (response) {
-      if ('error' in response) {
-        Alert.alert(
-          'Authentication error',
-          response.params.error_description || 'something went wrong'
+      if ('error' in response && response.error !== null) {
+        Alert.alert('Authentication Error', 
+          typeof response.error === 'string' 
+            ? response.error 
+            : JSON.stringify(response.error) || 'Unknown error occurred'
         );
         return;
       }
-      if (response.type === 'success') {
+      if (response && response.type === 'success') {
         exchangeFn({
           clientId,
           code: response.params.code,
@@ -87,8 +130,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
     try {
       const urlParams = new URLSearchParams({
-        client_id: clientId || '',
-        logout_uri: redirectUri || '',
+        client_id: clientId,
+        logout_uri: redirectUri,
       });
       
       // Open the logout page in the browser
@@ -108,7 +151,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setAuthTokens(null);
       }
     } catch (error) {
-      console.error('Error during token revocation:', error);
+      await saveAndSetAuthTokens(null);
     }
   };
 
@@ -117,8 +160,31 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     authTokens,
     login: promptAsync,
     logout,
-    isAuthenticated: !!authTokens
+    isAuthenticated: !!authTokens,
+    isLoading
   };
+
+    // Modify your existing setAuthTokens usage to also save to storage
+    const saveAndSetAuthTokens = async (tokens: TokenResponse | null) => {
+      try {
+        if (tokens) {
+          const minimalTokenData = {
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            issuedAt: tokens.issuedAt,
+            expiresIn: tokens.expiresIn,
+          };
+          await SecureStore.setItemAsync(AUTH_TOKENS_KEY, JSON.stringify(minimalTokenData));
+        } else {
+          await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
+        }
+        setAuthTokens(tokens);
+      } catch (error) {
+        console.error('Error saving auth tokens:', error);
+      }
+    };
+    
+  if (isLoading) { return null; }
 
   return (
     <AuthContext.Provider value={contextValue}>
