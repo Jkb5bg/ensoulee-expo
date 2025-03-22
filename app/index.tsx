@@ -2,6 +2,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useAuth } from "@/components/AuthContext";
 import OnboardingScreen from './(onboarding)';
 import { useEffect } from 'react';
+import TabsIndexScreen from './(tabs)/index';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -15,9 +16,15 @@ export default function IndexScreen() {
 	console.log("Authentication status: " + isAuthenticated);
     })
 
-    return ( 
-        <>
+    if (!isAuthenticated) {
+        return (
             <OnboardingScreen />
-        </>
-    )
+        )
+    }
+
+    if (isAuthenticated) {
+        return (
+            <TabsIndexScreen />
+        )
+    }
 }
