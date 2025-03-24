@@ -5,6 +5,7 @@ import { TokenResponse } from 'expo-auth-session/build/TokenRequest'
 import { Alert } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
+import * as Linking from 'expo-linking';
 
 WebBrowser.maybeCompleteAuthSession();
 

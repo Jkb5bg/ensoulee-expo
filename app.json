@@ -14,13 +14,15 @@
       "backgroundColor": "#181818"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jkb5bg.ensoulee"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#181818"
-      }
+      },
+      "package": "com.jkb5bg.ensoulee"
     },
     "web": {
       "bundler": "metro",
