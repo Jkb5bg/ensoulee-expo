@@ -56,10 +56,6 @@ export default function TabsLayout() {
     const profileIconSize = isSmallDevice ? 36 : 40;
     const titleFontSize = isSmallDevice ? 22 : 24;
 
-    useEffect(() => {
-        console.log("Triggered layout")
-    })
-
   return (
     <Tabs
       screenOptions={({ route }) => ({

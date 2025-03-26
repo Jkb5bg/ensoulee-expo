@@ -6,29 +6,27 @@ import { Alert } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import * as Linking from 'expo-linking';
+import { jwtDecode } from 'jwt-decode';
+import { GetUserSelfAPI } from '@/api/GetUserSelfAPI';
+import DecodedTokenInfo from '@/types/decodedTokenInfo';
+import RawDecodedToken from '@/types/rawDecodedToken';
+import AuthContextType from '@/types/authContextType';
+import User from '@/types/user';
+
 
 WebBrowser.maybeCompleteAuthSession();
 
 // AWS COGNITO configuration environment variables
-const clientId: string = process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID!;
-const userPoolUri: string = process.env.EXPO_PUBLIC_USER_POOL_ID!;
+const clientId: string = process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID ?? '';
+const userPoolUri: string = process.env.EXPO_PUBLIC_USER_POOL_ID ?? '';
 // const redirectUri: string = process.env.EXPO_PUBLIC_REDIRECT_URI!;
 const redirectUri = AuthSession.makeRedirectUri();
 const hasCompletedOnboarding: boolean = false;
 const AUTH_TOKENS_KEY = 'auth_tokens';
+const USER_INFO_KEY = 'user_info';
 
 // Define refresh buffer time (refresh token 5 minutes before expiration)
 const REFRESH_BUFFER_TIME = 5 * 60; // 5 minutes in seconds
-
-// Define the shape of our context
-interface AuthContextType {
-  authTokens: TokenResponse | null;
-  login: () => Promise<any>;
-  logout: () => Promise<void>;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  getAccessToken: () => Promise<string | null>; // method to get a valid token
-}
 
 // Create the context with a default value
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,7 +40,9 @@ interface AuthProviderProps {
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [authTokens, setAuthTokens] = useState<TokenResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [userInfo, setUserInfo] = useState<DecodedTokenInfo | null>(null);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const DecodedTokenInfo: DecodedTokenInfo | null = null;
 
 
   const discoveryDocument = useMemo(() => ({
@@ -77,7 +77,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       if (!authTokens?.refreshToken) return false;
   
       try {
-        console.log('Refreshing token...');
         const refreshedTokens = await refreshAsync(
           {
             clientId,
@@ -87,7 +86,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         );
   
         await saveAndSetAuthTokens(refreshedTokens);
-        console.log('Token refreshed successfully');
         return true;
       } catch (error) {
         console.error('Failed to refresh token:', error);
@@ -148,12 +146,25 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     const loadTokens = async () => {
       try {
         const tokensString = await SecureStore.getItemAsync(AUTH_TOKENS_KEY);
+        const userInfoString = await SecureStore.getItemAsync(USER_INFO_KEY);
+
+              // Load user info if available
+        if (userInfoString) {
+          try {
+            const parsedUserInfo = JSON.parse(userInfoString);
+            setUserInfo(parsedUserInfo);
+          } catch (error) {
+            console.error('Error parsing user info:', error);
+          }
+        }
+
         if (tokensString) {
           const tokens = JSON.parse(tokensString);
           
           const parsedTokens = {
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
+            idToken: tokens.idToken,
             issuedAt: tokens.issuedAt,
             expiresIn: tokens.expiresIn,
           } as TokenResponse;
@@ -194,6 +205,31 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     };
   }, []);
 
+  const decodeJWT = (token: string): DecodedTokenInfo | null => {
+    try {
+      // Decode the token using the RawDecodedToken interface
+      const decoded = jwtDecode<RawDecodedToken>(token);
+      
+      // Check if we're dealing with an ID token or access token
+      const apiKey = decoded['custom:apiKey'] || '';
+      const givenName = decoded['given_name'] || decoded.username || decoded.sub?.substring(0, 8) || 'User';
+      
+      // Map the raw keys to your internal type
+      return {
+        email: decoded.email || '',
+        apiKey: apiKey,
+        givenName: givenName,
+        gender: decoded.gender,
+        birthdate: decoded.birthdate,
+        cognito_username: decoded['cognito:username'] || decoded.username,
+        exp: decoded.exp,
+      };
+    } catch (error) {
+      console.error('Failed to decode token', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     const exchangeFn = async (exchangeTokenReq: any) => {
       try {        
@@ -203,6 +239,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         );
         
         await saveAndSetAuthTokens(exchangeTokenResponse);
+        if (userInfo != null && authTokens?.idToken != null) {
+          try {
+            const user = await GetUserSelfAPI(userInfo, authTokens.idToken);
+          } catch (error) {
+            console.error("Error fetching user data:", error);
+          }
+        }
         // Schedule token refresh for the new tokens
         scheduleTokenRefresh(exchangeTokenResponse);
       } catch (error) {
@@ -230,6 +273,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         });
       }
     }
+
   }, [discoveryDocument, request, response]);
 
   const logout = async () => {
@@ -276,7 +320,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     logout,
     isAuthenticated: !!authTokens,
     isLoading,
-    getAccessToken
+    getAccessToken,
+    userInfo
   };
 
   // Modify your existing setAuthTokens usage to also save to storage
@@ -285,11 +330,37 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       if (tokens) {
         const minimalTokenData = {
           accessToken: tokens.accessToken,
+          idToken: tokens.idToken,
           refreshToken: tokens.refreshToken,
           issuedAt: tokens.issuedAt,
           expiresIn: tokens.expiresIn,
         };
         await SecureStore.setItemAsync(AUTH_TOKENS_KEY, JSON.stringify(minimalTokenData));
+
+              // Decode the JWT and store user info
+      
+      if (tokens.idToken) {
+        const decodedInfo = decodeJWT(tokens.idToken);
+        setUserInfo(decodedInfo);
+
+        // Save user info to SecureStore
+        if (decodedInfo) {
+          await SecureStore.setItemAsync(USER_INFO_KEY, JSON.stringify(decodedInfo));
+        }
+
+        // Use decoded info for API call
+        try {
+          if (decodedInfo) {
+            const user = await GetUserSelfAPI(decodedInfo, tokens.idToken);
+          } else {
+            console.error("Decoded token info is null");
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+        }
+                
+      }
+
       } else {
         await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
       }

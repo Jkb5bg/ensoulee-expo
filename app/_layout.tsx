@@ -9,21 +9,17 @@ export default function RootLayout() {
     useEffect(() => {
         const getStoredTokens = async () => {
             try {
-                console.log("Root layout triggered");
                 const tokensString = await SecureStore.getItemAsync('auth_tokens');
                 if (tokensString) {
                     const tokens = JSON.parse(tokensString);
-                    console.log("Auth tokens:", tokens);
                     
                     // You can also check if token is expired
                     const expirationTime = tokens.issuedAt + tokens.expiresIn;
                     const isExpired = Date.now() / 1000 > expirationTime;
-                    console.log("Token expired:", isExpired);
                     
                     // Calculate time remaining if not expired
                     if (!isExpired) {
                         const secondsRemaining = Math.floor(expirationTime - (Date.now() / 1000));
-                        console.log(`Token expires in: ${secondsRemaining} seconds`);
                     }
                 } else {
                     console.log("No auth tokens found in storage");
