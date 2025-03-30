@@ -1,11 +1,11 @@
 import { StatusBar } from 'expo-status-bar';
 import { Slot } from 'expo-router';
 import { AuthProvider } from '@/components/AuthContext';
+import { LoadingProvider } from '@/components/LoadingContext';
 import { useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 
 export default function RootLayout() {
-
     useEffect(() => {
         const getStoredTokens = async () => {
             try {
@@ -33,15 +33,16 @@ export default function RootLayout() {
     }, []);
 
     return (
-        <AuthProvider>
-            <StatusBar hidden={false} translucent style="light" />
-            <Slot 
-                screenOptions={{
-                headerShown: false, // or true depending on what you want
-                contentStyle: { backgroundColor: 'black' }, // Optional
-            }}
-            />
-        </AuthProvider>
-    )
-
+        <LoadingProvider>
+            <AuthProvider>
+                <StatusBar hidden={false} translucent style="light" />
+                <Slot 
+                    screenOptions={{
+                        headerShown: false,
+                        contentStyle: { backgroundColor: 'black' },
+                    }}
+                />
+            </AuthProvider>
+        </LoadingProvider>
+    );
 }

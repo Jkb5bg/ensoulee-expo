@@ -2,41 +2,57 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useAuth } from "@/components/AuthContext";
 import OnboardingScreen from './(onboarding)';
 import { useEffect, useState } from 'react';
-import { router } from "expo-router";
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Text } from 'react-native';
 import { Redirect } from 'expo-router';
+import LoadingScreen from '@/components/LoadingScreen';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 export default function IndexScreen() {
-    const { isAuthenticated } = useAuth();
-    const [isReady, setIsReady] = useState(false);
+    const { isAuthenticated, isLoading } = useAuth();
+    const [appReady, setAppReady] = useState(false);
 
+    // Effect to hide splash screen once auth is loaded
     useEffect(() => {
-        // Mark component as ready after a slight delay
-        // to ensure layout is fully mounted
-        const timer = setTimeout(() => {
-            setIsReady(true);
-        }, 100);
-        
-        return () => clearTimeout(timer);
-    }, []);
+        const prepare = async () => {
+            try {
+                // Wait for auth to complete initial loading
+                if (!isLoading) {
+                    console.log("Auth loaded, hiding splash screen");
+                    await SplashScreen.hideAsync();
+                    setAppReady(true);
+                }
+            } catch (e) {
+                console.warn("Error hiding splash screen:", e);
+            }
+        };
 
-    // Wait until component is ready before attempting navigation
-    if (isReady && isAuthenticated) {
-        // Use Redirect component instead of router.replace
-        return <Redirect href="/(tabs)" />;
+        prepare();
+    }, [isLoading]);
+
+    // Debug logs for state changes
+    useEffect(() => {
+        console.log("IndexScreen - State changed:", { 
+            isAuthenticated, 
+            isLoading,
+            appReady 
+        });
+    }, [isAuthenticated, isLoading, appReady]);
+
+    // Show loading during auth operations
+    if (isLoading) {
+        console.log("IndexScreen - Auth loading in progress");
+        return <LoadingScreen />;
     }
 
+    // Show onboarding if not authenticated
     if (!isAuthenticated) {
+        console.log("IndexScreen - Not authenticated, showing onboarding");
         return <OnboardingScreen />;
     }
 
-    // Loading state while waiting for ready state
-    return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
-            <ActivityIndicator size="large" color="#fff" />
-        </View>
-    );
+    // If authenticated, redirect to tabs
+    console.log("IndexScreen - Authenticated, redirecting to tabs");
+    return <Redirect href="/(tabs)" />;
 }

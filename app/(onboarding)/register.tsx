@@ -4,78 +4,69 @@ import {
     Text,
     TouchableOpacity,
     View,
-    Alert, ActivityIndicator,
+    Alert,
 } from 'react-native';
-import {Ionicons} from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/components/AuthContext";
-
+import { useEffect } from "react";
 
 export default function RegisterScreen() {
-
-    const { authTokens, login, logout, isAuthenticated } = useAuth();
+    const { login } = useAuth();
 
     const handleLogin = async () => {
-
+        console.log("Login button pressed");
         try {
+            console.log("Starting login process");
             await login();
-            if (authTokens != null) {
-                console.log("Access token:", authTokens.accessToken);
-            }
+            console.log("Login process initiated");
         } catch (error) {
             console.error("Login error:", error);
             Alert.alert("Login Error", "There was a problem during login. Please try again.");
         }
-    }
-
-    const handleGoogleLogin = () => {
-        // TODO: Implement Google Login
-    }
+    };
 
     return (
-        <>
-            <SafeAreaView style={styles.container}>
-                <View style={styles.contentContainer}>
-                    <Text style={styles.title}>Sign In</Text>
+        <SafeAreaView style={styles.container}>
+            <View style={styles.contentContainer}>
+                <Text style={styles.title}>Sign In</Text>
 
-                    {/* Facebook Login Button */}
-                    <TouchableOpacity onPress={handleLogin} style={styles.socialButton}>
-                        <View style={styles.facebookButton}>
-                            <Ionicons name="logo-facebook" size={24} color="white" />
-                            <Text style={styles.socialButtonText}>Continue with Facebook</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* Spacing */}
-                    <View style={{ height: 16 }} />
-
-                    {/* Google Login Button */}
-                    <TouchableOpacity onPress={handleLogin} style={styles.socialButton}>
-                        <View style={styles.googleButton}>
-                            <Ionicons name="logo-google" size={24} color="#4285F4" />
-                            <Text style={styles.googleButtonText}>Continue with Google</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    <View style={styles.checkboxContainer}>
-                        <Text style={styles.checkboxLabel}>
-                            I have read and agree to the Terms of Service.
-                        </Text>
+                {/* Facebook Login Button */}
+                <TouchableOpacity onPress={handleLogin} style={styles.socialButton}>
+                    <View style={styles.facebookButton}>
+                        <Ionicons name="logo-facebook" size={24} color="white" />
+                        <Text style={styles.socialButtonText}>Continue with Facebook</Text>
                     </View>
-                </View>
+                </TouchableOpacity>
 
-                <View style={styles.footerContainer}>
-                    <View style={styles.question}>
-                        <Text style={styles.questionText}>Don't have an account? </Text>
-                        <TouchableOpacity onPress={handleLogin}>
-                            <Text style={styles.registerText}>Register here.</Text>
-                        </TouchableOpacity>
+                {/* Spacing */}
+                <View style={{ height: 16 }} />
+
+                {/* Google Login Button */}
+                <TouchableOpacity onPress={handleLogin} style={styles.socialButton}>
+                    <View style={styles.googleButton}>
+                        <Ionicons name="logo-google" size={24} color="#4285F4" />
+                        <Text style={styles.googleButtonText}>Continue with Google</Text>
                     </View>
+                </TouchableOpacity>
+
+                <View style={styles.checkboxContainer}>
+                    <Text style={styles.checkboxLabel}>
+                        I have read and agree to the Terms of Service.
+                    </Text>
                 </View>
-            </SafeAreaView>
-        </>
+            </View>
+
+            <View style={styles.footerContainer}>
+                <View style={styles.question}>
+                    <Text style={styles.questionText}>Don't have an account? </Text>
+                    <TouchableOpacity onPress={handleLogin}>
+                        <Text style={styles.registerText}>Register here.</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </SafeAreaView>
     );
-};
-
+}
 
 const styles = StyleSheet.create({
     // Keeping your existing styles
@@ -86,17 +77,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 30,
         paddingVertical: 20,
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#181818',
-    },
-    loadingText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        marginTop: 10,
     },
     contentContainer: {
         width: '100%',
@@ -109,8 +89,6 @@ const styles = StyleSheet.create({
         textAlign: 'left',
         paddingVertical: 20,
     },
-
-    // New styles for social buttons
     socialButton: {
         width: '100%',
         borderRadius: 8,
@@ -148,8 +126,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginLeft: 12,
     },
-
-    // Keeping your remaining styles
     checkboxContainer: {
         width: '100%',
         flexDirection: 'row',

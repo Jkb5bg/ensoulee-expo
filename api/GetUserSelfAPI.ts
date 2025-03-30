@@ -3,11 +3,11 @@ import DecodedTokenInfo from '@/types/decodedTokenInfo';
 
 export const GetUserSelfAPI = async (userInfo: DecodedTokenInfo, authToken: string): Promise<User | undefined> => {
 
-    const apiURL = process.env.EXPO_PUBLIC_ENSOULEE_API_URL;
+    const API_URL = process.env.EXPO_PUBLIC_ENSOULEE_API_URL;
 
     // API Call to get the User info from the backend.
     try {
-        const response = await fetch(apiURL + "user/self", {
+        const response = await fetch(API_URL + "user/self", {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',

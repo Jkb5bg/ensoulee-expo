@@ -5,25 +5,24 @@ import { TokenResponse } from 'expo-auth-session/build/TokenRequest'
 import { Alert } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
-import * as Linking from 'expo-linking';
 import { jwtDecode } from 'jwt-decode';
 import { GetUserSelfAPI } from '@/api/GetUserSelfAPI';
 import DecodedTokenInfo from '@/types/decodedTokenInfo';
 import RawDecodedToken from '@/types/rawDecodedToken';
 import AuthContextType from '@/types/authContextType';
-import User from '@/types/user';
-
+import {router} from "expo-router";
+import * as SplashScreen from 'expo-splash-screen';
+import { useLoading } from './LoadingContext';
 
 WebBrowser.maybeCompleteAuthSession();
 
 // AWS COGNITO configuration environment variables
 const clientId: string = process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID ?? '';
 const userPoolUri: string = process.env.EXPO_PUBLIC_USER_POOL_ID ?? '';
-// const redirectUri: string = process.env.EXPO_PUBLIC_REDIRECT_URI!;
 const redirectUri = AuthSession.makeRedirectUri();
-const hasCompletedOnboarding: boolean = false;
 const AUTH_TOKENS_KEY = 'auth_tokens';
 const USER_INFO_KEY = 'user_info';
+const AUTH_STATE_KEY = 'auth_state';
 
 // Define refresh buffer time (refresh token 5 minutes before expiration)
 const REFRESH_BUFFER_TIME = 5 * 60; // 5 minutes in seconds
@@ -42,8 +41,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [userInfo, setUserInfo] = useState<DecodedTokenInfo | null>(null);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const DecodedTokenInfo: DecodedTokenInfo | null = null;
-
+  const { showLoading, hideLoading } = useLoading();
+  
+  // Add this ref to track if auth is in progress
+  const authInProgressRef = useRef<boolean>(false);
 
   const discoveryDocument = useMemo(() => ({
     authorizationEndpoint: userPoolUri + '/oauth2/authorize',
@@ -51,7 +52,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     revocationEndpoint: userPoolUri + '/oauth2/revoke',
   }), []);
 
-  const [request, response, promptAsync] = useAuthRequest(
+  const [request, response, promptAsyncOriginal] = useAuthRequest(
     {
       clientId,
       responseType: ResponseType.Code,
@@ -61,94 +62,149 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     discoveryDocument
   );
 
-    // Check if token is expired or will expire soon
-    const isTokenExpiredOrExpiringSoon = (tokens: TokenResponse): boolean => {
-      if (!tokens?.issuedAt || !tokens?.expiresIn) return true;
+  // Modified login function
+  const login = async () => {
+    console.log("Login function called");
+    
+    try {
+      // Set auth in progress flag
+      authInProgressRef.current = true;
       
-      const expirationTime = tokens.issuedAt + tokens.expiresIn;
-      const currentTime = Date.now() / 1000;
+      // Save auth state to storage for persistence across app restarts
+      await SecureStore.setItemAsync(AUTH_STATE_KEY, JSON.stringify({ 
+        inProgress: true,
+        timestamp: Date.now()
+      }));
       
-      // Return true if token is expired or will expire within buffer time
-      return currentTime > expirationTime - REFRESH_BUFFER_TIME;
-    };
-  
-    // Function to refresh the token
-    const refreshToken = async (): Promise<boolean> => {
-      if (!authTokens?.refreshToken) return false;
-  
-      try {
-        const refreshedTokens = await refreshAsync(
-          {
-            clientId,
-            refreshToken: authTokens.refreshToken,
-          },
-          discoveryDocument
-        );
-  
-        await saveAndSetAuthTokens(refreshedTokens);
-        return true;
-      } catch (error) {
-        console.error('Failed to refresh token:', error);
-        // If refresh fails, clear tokens and force re-login
-        await saveAndSetAuthTokens(null);
-        return false;
-      }
-    };
-  
-    // Schedule the next token refresh
-    const scheduleTokenRefresh = (tokens: TokenResponse) => {
-      // Clear any existing timeout
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-  
-      if (!tokens?.issuedAt || !tokens?.expiresIn) return;
-  
-      const expirationTime = tokens.issuedAt + tokens.expiresIn;
-      const currentTime = Date.now() / 1000;
+      // Show the global loading overlay
+      showLoading("Signing in...");
       
-      // Calculate time until refresh (5 minutes before expiration)
-      const timeUntilRefresh = Math.max(
-        0,
-        (expirationTime - REFRESH_BUFFER_TIME - currentTime) * 1000
+      // Launch the auth flow
+      return await promptAsyncOriginal();
+    } catch (error) {
+      console.error("Error in login:", error);
+      
+      // Clear the auth in progress state
+      authInProgressRef.current = false;
+      await SecureStore.deleteItemAsync(AUTH_STATE_KEY);
+      
+      // Hide the loading overlay
+      hideLoading();
+      throw error;
+    }
+  };
+
+  // Check if token is expired or will expire soon
+  const isTokenExpiredOrExpiringSoon = (tokens: TokenResponse): boolean => {
+    if (!tokens?.issuedAt || !tokens?.expiresIn) return true;
+    
+    const expirationTime = tokens.issuedAt + tokens.expiresIn;
+    const currentTime = Date.now() / 1000;
+    
+    // Return true if token is expired or will expire within buffer time
+    return currentTime > expirationTime - REFRESH_BUFFER_TIME;
+  };
+
+  // Function to refresh the token
+  const refreshToken = async (): Promise<boolean> => {
+    if (!authTokens?.refreshToken) return false;
+
+    try {
+      const refreshedTokens = await refreshAsync(
+        {
+          clientId,
+          refreshToken: authTokens.refreshToken,
+        },
+        discoveryDocument
       );
-  
-      console.log(`Token refresh scheduled in ${timeUntilRefresh / 1000} seconds`);
-  
-      // Schedule refresh
-      refreshTimeoutRef.current = setTimeout(() => {
-        refreshToken().then(success => {
-          if (success) {
-            // If refresh was successful, schedule the next one
-            if (authTokens) {
-              scheduleTokenRefresh(authTokens);
+
+      await saveAndSetAuthTokens(refreshedTokens);
+      return true;
+    } catch (error) {
+      console.error('Failed to refresh token:', error);
+      // If refresh fails, clear tokens and force re-login
+      await saveAndSetAuthTokens(null);
+      return false;
+    }
+  };
+
+  // Schedule the next token refresh
+  const scheduleTokenRefresh = (tokens: TokenResponse) => {
+    // Clear any existing timeout
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+
+    if (!tokens?.issuedAt || !tokens?.expiresIn) return;
+
+    const expirationTime = tokens.issuedAt + tokens.expiresIn;
+    const currentTime = Date.now() / 1000;
+    
+    // Calculate time until refresh (5 minutes before expiration)
+    const timeUntilRefresh = Math.max(
+      0,
+      (expirationTime - REFRESH_BUFFER_TIME - currentTime) * 1000
+    );
+
+    console.log(`Token refresh scheduled in ${timeUntilRefresh / 1000} seconds`);
+
+    // Schedule refresh
+    refreshTimeoutRef.current = setTimeout(() => {
+      refreshToken().then(success => {
+        if (success) {
+          // If refresh was successful, schedule the next one
+          if (authTokens) {
+            scheduleTokenRefresh(authTokens);
+          }
+        }
+      });
+    }, timeUntilRefresh);
+  };
+
+  // Method to get a valid access token (refreshing if needed)
+  const getAccessToken = async (): Promise<string | null> => {
+    if (!authTokens) return null;
+
+    // Check if token needs refreshing
+    if (isTokenExpiredOrExpiringSoon(authTokens)) {
+      const success = await refreshToken();
+      if (!success) return null;
+    }
+
+    return authTokens?.accessToken || null;
+  };
+
+  // Load tokens and check auth state
+  useEffect(() => {
+    const loadTokensAndState = async () => {
+      try {
+        // Check if there's an auth flow in progress
+        const authStateString = await SecureStore.getItemAsync(AUTH_STATE_KEY);
+        if (authStateString) {
+          const authState = JSON.parse(authStateString);
+          
+          // If auth flow is in progress
+          if (authState.inProgress) {
+            console.log("Auth flow was in progress, showing loading overlay");
+            authInProgressRef.current = true;
+            showLoading("Signing in...");
+            
+            // Check if auth state is stale (older than 5 minutes)
+            const isStale = Date.now() - authState.timestamp > 5 * 60 * 1000;
+            if (isStale) {
+              console.log("Auth state is stale, clearing");
+              await SecureStore.deleteItemAsync(AUTH_STATE_KEY);
+              authInProgressRef.current = false;
+              hideLoading();
             }
           }
-        });
-      }, timeUntilRefresh);
-    };
-  
-    // Method to get a valid access token (refreshing if needed)
-    const getAccessToken = async (): Promise<string | null> => {
-      if (!authTokens) return null;
-  
-      // Check if token needs refreshing
-      if (isTokenExpiredOrExpiringSoon(authTokens)) {
-        const success = await refreshToken();
-        if (!success) return null;
-      }
-  
-      return authTokens?.accessToken || null;
-    };
-
-  // Load tokens from storage when the app starts
-  useEffect(() => {
-    const loadTokens = async () => {
-      try {
+        }
+        
+        // Load tokens
         const tokensString = await SecureStore.getItemAsync(AUTH_TOKENS_KEY);
         const userInfoString = await SecureStore.getItemAsync(USER_INFO_KEY);
 
-              // Load user info if available
+        // Load user info if available
         if (userInfoString) {
           try {
             const parsedUserInfo = JSON.parse(userInfoString);
@@ -183,6 +239,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
               // Otherwise schedule a future refresh
               scheduleTokenRefresh(parsedTokens);
             }
+            
+            // Auth is successful, clear auth in progress state
+            if (authInProgressRef.current) {
+              console.log("Auth successful, clearing auth in progress state");
+              await SecureStore.deleteItemAsync(AUTH_STATE_KEY);
+              authInProgressRef.current = false;
+              hideLoading();
+            }
           } else {
             // Token is completely expired, clear it
             await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
@@ -191,11 +255,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       } catch (error) {
         console.error('Error loading auth tokens:', error);
       } finally {
+        console.log("Initial loading completed");
         setIsLoading(false);
       }
     };
     
-    loadTokens();
+    loadTokensAndState();
     
     // Cleanup function to clear the timeout when component unmounts
     return () => {
@@ -210,11 +275,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       // Decode the token using the RawDecodedToken interface
       const decoded = jwtDecode<RawDecodedToken>(token);
       
-      // Check if we're dealing with an ID token or access token
+      // Map the raw keys to your internal type
       const apiKey = decoded['custom:apiKey'] || '';
       const givenName = decoded['given_name'] || decoded.username || decoded.sub?.substring(0, 8) || 'User';
       
-      // Map the raw keys to your internal type
       return {
         email: decoded.email || '',
         apiKey: apiKey,
@@ -230,31 +294,50 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
+  // Handle the authentication response
   useEffect(() => {
     const exchangeFn = async (exchangeTokenReq: any) => {
       try {        
+        console.log("Starting token exchange");
         const exchangeTokenResponse = await exchangeCodeAsync(
           exchangeTokenReq,
           discoveryDocument
         );
         
+        // Save tokens and navigate
         await saveAndSetAuthTokens(exchangeTokenResponse);
-        if (userInfo != null && authTokens?.idToken != null) {
+        
+        // Get user info if needed
+        if (exchangeTokenResponse.idToken) {
           try {
-            const user = await GetUserSelfAPI(userInfo, authTokens.idToken);
+            const decodedInfo = decodeJWT(exchangeTokenResponse.idToken);
+            if (decodedInfo) {
+              const user = await GetUserSelfAPI(decodedInfo, exchangeTokenResponse.idToken);
+            }
           } catch (error) {
             console.error("Error fetching user data:", error);
           }
         }
-        // Schedule token refresh for the new tokens
+        
+        // Schedule token refresh
         scheduleTokenRefresh(exchangeTokenResponse);
       } catch (error) {
         console.error("Token exchange failed:", error);
+        // Clear auth in progress state on error
+        await SecureStore.deleteItemAsync(AUTH_STATE_KEY);
+        authInProgressRef.current = false;
+        hideLoading();
       }
     };
     
     if (response) {
       if ('error' in response && response.error !== null) {
+        // Handle error response
+        console.error("Auth response error:", response.error);
+        SecureStore.deleteItemAsync(AUTH_STATE_KEY);
+        authInProgressRef.current = false;
+        hideLoading();
+        
         Alert.alert('Authentication Error', 
           typeof response.error === 'string' 
             ? response.error 
@@ -262,7 +345,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         );
         return;
       }
+      
       if (response && response.type === 'success') {
+        console.log("Authentication successful, proceeding with token exchange");
         exchangeFn({
           clientId,
           code: response.params.code,
@@ -271,12 +356,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             code_verifier: request?.codeVerifier
           },
         });
+      } else {
+        console.log("Authentication response not successful:", response.type);
+        SecureStore.deleteItemAsync(AUTH_STATE_KEY);
+        authInProgressRef.current = false;
+        hideLoading();
       }
     }
-
   }, [discoveryDocument, request, response]);
 
   const logout = async () => {
+    // Show loading during logout
+    showLoading("Signing out...");
+    
     // Clear any scheduled refresh
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);
@@ -284,8 +376,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
     
     if (!authTokens?.refreshToken || !discoveryDocument || !clientId) {
+      hideLoading();
       return;
     }
+    
     try {
       const urlParams = new URLSearchParams({
         client_id: clientId,
@@ -310,13 +404,15 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
     } catch (error) {
       await saveAndSetAuthTokens(null);
+    } finally {
+      hideLoading();
     }
   };
 
-  // The value that will be given to consumers of this context
+  // Context value
   const contextValue = {
     authTokens,
-    login: promptAsync,
+    login,
     logout,
     isAuthenticated: !!authTokens,
     isLoading,
@@ -324,7 +420,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     userInfo
   };
 
-  // Modify your existing setAuthTokens usage to also save to storage
+  // Save tokens and set state
   const saveAndSetAuthTokens = async (tokens: TokenResponse | null) => {
     try {
       if (tokens) {
@@ -337,40 +433,45 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         };
         await SecureStore.setItemAsync(AUTH_TOKENS_KEY, JSON.stringify(minimalTokenData));
 
-              // Decode the JWT and store user info
-      
-      if (tokens.idToken) {
-        const decodedInfo = decodeJWT(tokens.idToken);
-        setUserInfo(decodedInfo);
+        // Decode the JWT and store user info
+        if (tokens.idToken) {
+          const decodedInfo = decodeJWT(tokens.idToken);
+          setUserInfo(decodedInfo);
 
-        // Save user info to SecureStore
-        if (decodedInfo) {
-          await SecureStore.setItemAsync(USER_INFO_KEY, JSON.stringify(decodedInfo));
-        }
-
-        // Use decoded info for API call
-        try {
+          // Save user info to SecureStore
           if (decodedInfo) {
-            const user = await GetUserSelfAPI(decodedInfo, tokens.idToken);
-          } else {
-            console.error("Decoded token info is null");
+            await SecureStore.setItemAsync(USER_INFO_KEY, JSON.stringify(decodedInfo));
           }
-        } catch (error) {
-          console.error("Error fetching user data:", error);
         }
-                
-      }
-
       } else {
         await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
+        await SecureStore.deleteItemAsync(USER_INFO_KEY);
+        setUserInfo(null);
       }
+      
       setAuthTokens(tokens);
+      
+      // Clear auth in progress state
+      await SecureStore.deleteItemAsync(AUTH_STATE_KEY);
+      authInProgressRef.current = false;
+      hideLoading();
+      
+      // Navigate if tokens are available
+      if (tokens) {
+        console.log("Tokens saved, navigating to tabs");
+        router.replace("/(tabs)");
+      }
     } catch (error) {
       console.error('Error saving auth tokens:', error);
+      hideLoading();
     }
   };
     
-  if (isLoading) { return null; }
+  // Only render children once initial loading is complete
+  if (isLoading) { 
+    console.log("Auth provider still in initial loading");
+    return null; 
+  }
 
   return (
     <AuthContext.Provider value={contextValue}>
