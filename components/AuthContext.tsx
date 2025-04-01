@@ -7,12 +7,14 @@ import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import { jwtDecode } from 'jwt-decode';
 import { GetUserSelfAPI } from '@/api/GetUserSelfAPI';
+import { GetUserProfileImage } from '@/api/GetUserProfileImage';
 import DecodedTokenInfo from '@/types/decodedTokenInfo';
 import RawDecodedToken from '@/types/rawDecodedToken';
-import AuthContextType from '@/types/authContextType';
+import User from '@/types/user';
 import {router} from "expo-router";
 import * as SplashScreen from 'expo-splash-screen';
 import { useLoading } from './LoadingContext';
+import ExtendedAuthContextType from '@/types/extendedAuthContextType';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -22,13 +24,16 @@ const userPoolUri: string = process.env.EXPO_PUBLIC_USER_POOL_ID ?? '';
 const redirectUri = AuthSession.makeRedirectUri();
 const AUTH_TOKENS_KEY = 'auth_tokens';
 const USER_INFO_KEY = 'user_info';
+const USER_DATA_KEY = 'user_data';
 const AUTH_STATE_KEY = 'auth_state';
+const USER_PROFILE_IMAGE_KEY = 'user_profile_image'; 
+
 
 // Define refresh buffer time (refresh token 5 minutes before expiration)
 const REFRESH_BUFFER_TIME = 5 * 60; // 5 minutes in seconds
 
 // Create the context with a default value
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<ExtendedAuthContextType | undefined>(undefined);
 
 // Provider props type
 interface AuthProviderProps {
@@ -42,9 +47,15 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [userInfo, setUserInfo] = useState<DecodedTokenInfo | null>(null);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { showLoading, hideLoading } = useLoading();
+  const [user, setUser] = useState<User | null>(null); 
+  const [userProfileImage, setUserProfileImage] = useState<string | null>(null);
   
   // Add this ref to track if auth is in progress
   const authInProgressRef = useRef<boolean>(false);
+
+  // Ref to track if user data is properly fetched
+  const fetchingUserDataRef = useRef<boolean>(false);
+
 
   const discoveryDocument = useMemo(() => ({
     authorizationEndpoint: userPoolUri + '/oauth2/authorize',
@@ -61,6 +72,54 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     },
     discoveryDocument
   );
+
+  // Function to fetch and update user data from API
+  const fetchUserData = async (tokenInfo: DecodedTokenInfo, accessToken: string): Promise<void> => {
+      // Prevent concurrent calls
+    if (fetchingUserDataRef.current) {
+      console.log("Skipping duplicate fetchUserData call - already in progress");
+      return;
+    }
+    
+    fetchingUserDataRef.current = true;
+    try {
+      // Fetch user data
+      const userData = await GetUserSelfAPI(tokenInfo, accessToken);
+      
+      if (userData) {
+        // Save user data to state and storage
+        setUser(userData);
+        await SecureStore.setItemAsync(USER_DATA_KEY, JSON.stringify(userData));
+        
+        // Get profile image if user has image filenames
+        if (userData.imageFilenames && userData.imageFilenames.length > 0) {
+          const imageUrl = await GetUserProfileImage(tokenInfo, accessToken, userData);
+          if (imageUrl) {
+            setUserProfileImage(imageUrl);
+            await SecureStore.setItemAsync(USER_PROFILE_IMAGE_KEY, imageUrl);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    } finally {
+      fetchingUserDataRef.current = false;
+    }
+  };
+
+      // Function to refresh user data (can be called from components)
+  const refreshUserData = async (): Promise<void> => {
+    if (!userInfo || !authTokens?.accessToken) return;
+    
+    showLoading("Refreshing your data...");
+    try {
+      if (authTokens.idToken) {
+        await fetchUserData(userInfo, authTokens.idToken);
+      }
+    } finally {
+      hideLoading();
+    }
+  };
 
   // Modified login function
   const login = async () => {
@@ -174,6 +233,24 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     return authTokens?.accessToken || null;
   };
 
+  // Method to get a valid ID token
+  const getIdToken = async (): Promise<string | null> => {
+    if (!authTokens) return null;
+
+    // Check if token needs refreshing
+    if (isTokenExpiredOrExpiringSoon(authTokens)) {
+      const success = await refreshToken();
+      if (!success) return null;
+    }
+
+    return authTokens?.idToken || null;
+  };
+
+  // Alias for getIdToken for backward compatibility
+  const getValidToken = getIdToken;
+
+
+
   // Load tokens and check auth state
   useEffect(() => {
     const loadTokensAndState = async () => {
@@ -203,6 +280,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         // Load tokens
         const tokensString = await SecureStore.getItemAsync(AUTH_TOKENS_KEY);
         const userInfoString = await SecureStore.getItemAsync(USER_INFO_KEY);
+        const userDataString = await SecureStore.getItemAsync(USER_DATA_KEY);
+        const profileImageUrl = await SecureStore.getItemAsync(USER_PROFILE_IMAGE_KEY);
 
         // Load user info if available
         if (userInfoString) {
@@ -212,6 +291,21 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           } catch (error) {
             console.error('Error parsing user info:', error);
           }
+        }
+
+        // Load user data if available
+        if (userDataString) {
+          try {
+            const parsedUserData = JSON.parse(userDataString);
+            setUser(parsedUserData);
+          } catch (error) {
+            console.error('Error parsing user data:', error);
+          }
+        }
+
+        // Set profile image if available
+        if (profileImageUrl) {
+          setUserProfileImage(profileImageUrl);
         }
 
         if (tokensString) {
@@ -278,6 +372,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       // Map the raw keys to your internal type
       const apiKey = decoded['custom:apiKey'] || '';
       const givenName = decoded['given_name'] || decoded.username || decoded.sub?.substring(0, 8) || 'User';
+      const userName = decoded['cognito:username'] || decoded.username || '';
       
       return {
         email: decoded.email || '',
@@ -286,6 +381,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         gender: decoded.gender,
         birthdate: decoded.birthdate,
         cognito_username: decoded['cognito:username'] || decoded.username,
+        userName: userName, // Make sure userName is included
         exp: decoded.exp,
       };
     } catch (error) {
@@ -312,7 +408,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           try {
             const decodedInfo = decodeJWT(exchangeTokenResponse.idToken);
             if (decodedInfo) {
-              const user = await GetUserSelfAPI(decodedInfo, exchangeTokenResponse.idToken);
+              await fetchUserData(decodedInfo, exchangeTokenResponse.idToken);
             }
           } catch (error) {
             console.error("Error fetching user data:", error);
@@ -410,14 +506,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   // Context value
-  const contextValue = {
+  const contextValue: ExtendedAuthContextType = {
     authTokens,
     login,
     logout,
     isAuthenticated: !!authTokens,
     isLoading,
     getAccessToken,
-    userInfo
+    getValidToken, // Alias for backward compatibility
+    userInfo,
+    user,
+    userProfileImage,
+    refreshUserData
   };
 
   // Save tokens and set state
@@ -446,7 +546,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       } else {
         await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
         await SecureStore.deleteItemAsync(USER_INFO_KEY);
+        await SecureStore.deleteItemAsync(USER_DATA_KEY);
+        await SecureStore.deleteItemAsync(USER_PROFILE_IMAGE_KEY);
         setUserInfo(null);
+        setUser(null);
+        setUserProfileImage(null);
       }
       
       setAuthTokens(tokens);

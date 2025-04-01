@@ -6,4 +6,5 @@ export default interface DecodedTokenInfo {
     birthdate?: string;
     cognito_username?: string;
     exp?: number;
+    userName?: string;
 }

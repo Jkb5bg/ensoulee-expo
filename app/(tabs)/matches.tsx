@@ -51,6 +51,11 @@ export default function Matches() {
             console.log("Missing userInfo or token", {userInfo, token: authTokens?.idToken });
         }
     }
+    
+    const handleLogoutPress = async () => {
+        console.log("Triggered logout button");
+        logout();
+    }
 
     return (
         <>
@@ -96,6 +101,15 @@ export default function Matches() {
                     API Result: {JSON.stringify(apiMatchesResult, null, 2)}
                 </Text>
             )}
+
+            <Text>
+                Trying to logout press below.
+            </Text>
+            <TouchableOpacity onPress={handleLogoutPress}>
+                <Text>
+                    Press here to logout.
+                </Text>
+            </TouchableOpacity>
         </>
     );
 }

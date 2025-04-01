@@ -31,9 +31,12 @@ export const LoadingProvider = ({ children }: LoadingProviderProps) => {
 
   // Hide the loading overlay
   const hideLoading = () => {
-    console.log('Hiding global loading overlay');
-    setIsVisible(false);
-    setMessage('Loading...');
+    console.log('Hiding global loading overlay (with delay)');
+    // Set a timeout to hide the loading screen after a delay
+    setTimeout(() => {
+      setIsVisible(false);
+      setMessage('Loading...');
+    }, 3000); // Adds a 2-second delay before hiding
   };
 
   return (
