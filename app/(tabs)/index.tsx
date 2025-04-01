@@ -1,236 +1,181 @@
-
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
-import { useAuth } from "@/components/AuthContext";
-import { useLoading } from "@/components/LoadingContext";
+import React, { useState, useCallback, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  Alert, 
+  Image,
+  ActivityIndicator
+} from 'react-native';
+import { useAuth } from '@/components/AuthContext';
+import { useLoading } from '@/components/LoadingContext';
 import { router } from 'expo-router';
 import Profile from '@/types/profile';
 import calculateAge from '@/functions/calculateAge';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { GetPotentialMatches } from '@/api/GetPotentialMatches';
 import { HandleSwipe } from '@/api/HandleSwipe';
-import { GetUserProfileImage } from '@/api/GetUserProfileImage';
+import { useAppData } from '@/components/AppDataContext';
 
 // Import your SVG icon components
-import SettingsIcon from "@/components/icons/SettingsIcon";
-import NotificationsIcon from "@/components/icons/NotificationsIcon";
-import CloseIcon from "@/components/icons/CloseIcon";
-import StarIcon from "@/components/icons/StarIcon";
-import LoveIcon from "@/components/icons/LoveIcon";
+import CloseIcon from '@/components/icons/CloseIcon';
+import StarIcon from '@/components/icons/StarIcon';
+import LoveIcon from '@/components/icons/LoveIcon';
 
 // Default avatar image
-const DEFAULT_AVATAR = require("@/assets/square_favicon.png");
+const DEFAULT_AVATAR = require("@/assets/images/default-avatar.png");
 
-export default function TabsIndexScreen() {
-    const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+export default function IndexScreen() {
+  // Get app data from our shared context
+  const { potentialMatches, refreshPotentialMatches, isLoading: isDataLoading } = useAppData();
+  const [currentProfileIndex, setCurrentProfileIndex] = useState(0);
+  
+  const { userInfo, authTokens, logout } = useAuth();
+  const { showLoading, hideLoading } = useLoading();
 
-    const { user, userInfo, userProfileImage, getValidToken, logout, refreshUserData } = useAuth();
-    const { showLoading, hideLoading, isLoading } = useLoading();
+  // Get current profile
+  const currentProfile: Profile | null = potentialMatches && potentialMatches.length > currentProfileIndex 
+    ? potentialMatches[currentProfileIndex] 
+    : null;
 
-    const navigateToSettings = () => {
-        logout();
-        router.replace("/(onboarding)");
-    }
+  // Navigate to settings
+  const navigateToSettings = () => {
+  }
 
-    const logoutAndRedirect = () => {
-        logout();
-        router.replace("/(onboarding)");
-    }
+  // Logout and redirect
+  const logoutAndRedirect = () => {
+    logout();
+    router.replace("/(onboarding)");
+  }
 
-    // Fetch potential matches
-    const fetchPotentialMatches = useCallback(async () => {
-        // Add a safeguard to prevent multiple concurrent requests
-        if (isLoading) return;
+  // Handle swipe action
+  const handleSwipe = async (direction: 'left' | 'right') => {
+    if (!currentProfile || !userInfo || !authTokens?.idToken) return;
+
+    try {
+      showLoading('Processing...');
+
+      // Use API function to handle the swipe
+      const success = await HandleSwipe(userInfo, authTokens.idToken, {
+        swiperUserName: userInfo.userName || userInfo['cognito_username'] || "No-load",
+        swipedUserName: currentProfile.userName,
+        direction: direction
+      });
+
+      if (success) {
+        // Move to next profile
+        setCurrentProfileIndex(prevIndex => prevIndex + 1);
         
-        try {
-          showLoading('Loading profiles...');
-          
-          const token = await getValidToken();
-          if (!token || !userInfo) {
-            hideLoading();
-            return; // Exit early instead of throwing error
-          }
-      
-          // Use API function to get potential matches
-          const data = await GetPotentialMatches(userInfo, token);
-          
-          // Process data and update state as before
-          // ...
-        } catch (error) {
-          console.error('Error fetching potential matches:', error);
-          // Don't show alert here, it's causing more UI interactions
-          setCurrentProfile(null);
-        } finally {
-          hideLoading();
-        }
-    }, [user, userInfo, getValidToken, showLoading, hideLoading, isLoading]);
-
-    // Add a retry counter to limit retries
-    const [retryCount, setRetryCount] = useState(0);
-
-    // Handle swipe action
-    const handleSwipe = async (direction: 'left' | 'right') => {
-        if (!currentProfile || !user || !user.userName || !userInfo) return;
-
-        try {
-            showLoading('Processing...');
-
-            const token = await getValidToken();
-            if (!token) {
-                throw new Error('Authentication required');
-            }
-
-            // Use API function to handle the swipe
-            const success = await HandleSwipe(userInfo, token, {
-                swiperUserName: user.userName,
-                swipedUserName: currentProfile.userName,
-                direction: direction
-            });
-
-            if (success) {
-                // Fetch next profile after successful swipe
-                fetchPotentialMatches();
-            } else {
-                hideLoading();
-                Alert.alert('Error', 'Failed to record your choice');
-            }
-        } catch (error) {
-            console.error('Error recording swipe:', error);
-            hideLoading();
-            Alert.alert('Error', 'Failed to record your choice');
-        }
-    }
-
-    // Initialize the screen
-    useEffect(() => {
-        async function prepare() {
-          try {
-            // Wait for splash screen to hide
-            await SplashScreen.hideAsync();
-            
-            if (user?.userName && retryCount < 3) { // Limit retries to prevent loops
-              showLoading('Setting up your discover feed...');
-              
-              // Increment retry counter
-              setRetryCount(prev => prev + 1);
-              
-              // Refresh user data if needed
-              if (!userProfileImage) {
-                await refreshUserData();
-              }
-              
-              // Fetch potential matches
-              await fetchPotentialMatches();
-            }
-          } catch (error) {
-            console.error("Error preparing app:", error);
-            hideLoading();
-          }
+        // If we've reached the end of the list, refresh
+        if (currentProfileIndex >= potentialMatches.length - 1) {
+          await refreshPotentialMatches();
+          setCurrentProfileIndex(0);
         }
         
-        prepare();
-      }, [user, fetchPotentialMatches, showLoading, hideLoading, refreshUserData, userProfileImage, retryCount]);
+        hideLoading();
+      } else {
+        hideLoading();
+        Alert.alert('Error', 'Failed to record your choice');
+      }
+    } catch (error) {
+      console.error('Error recording swipe:', error);
+      hideLoading();
+      Alert.alert('Error', 'Failed to record your choice');
+    }
+  }
 
-    // Render profile content
-    const renderContent = () => {
-        if (isLoading) {
-            // Global loading overlay will handle this, just return null.
-            return null;
-        }
+  // Refresh data if needed when the component mounts
+  useEffect(() => {
+    if (potentialMatches.length === 0 && !isDataLoading) {
+      refreshPotentialMatches();
+    }
+  }, []);
 
-        if (!currentProfile) {
-            return (
-                <View style={styles.centerContainer}>
-                    <Text style={styles.noProfilesText}>No more profiles to show</Text>
-                    <TouchableOpacity
-                        style={styles.refreshButton}
-                        onPress={fetchPotentialMatches}
-                        >
-                        <Text style={styles.refreshButtonText}>Refresh</Text>
-                    </TouchableOpacity>
-                </View>
-            );
-        }
+  // Render profile content
+  const renderContent = () => {
+    if (isDataLoading) {
+      return (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={"#f44d7b"} />
+        </View>
+      );
+    }
 
-        const hasValidImage = currentProfile.presignedImageUrls && 
-            currentProfile.presignedImageUrls.length > 0 &&
-            typeof currentProfile.presignedImageUrls[0] === 'string';
+    if (!currentProfile) {
+      return (
+        <View style={styles.centerContainer}>
+          <Text style={styles.noProfilesText}>No more profiles to show</Text>
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={async () => {
+              showLoading('Refreshing profiles...');
+              await refreshPotentialMatches();
+              setCurrentProfileIndex(0);
+              hideLoading();
+            }}
+          >
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
 
-        return (
-            <>
-                <View style={styles.imageContainer}>
-                    <Image
-                        source={hasValidImage
-                            ? { uri: currentProfile.presignedImageUrls[0]}
-                            : DEFAULT_AVATAR}
-                        style={styles.image}
-                        resizeMode={'cover'}
-                    />
-                    <View style={styles.profileInfo}>
-                        <Text style={styles.profileName}>
-                            {currentProfile.firstName || 'Unknown'}, {calculateAge(currentProfile.birthDate || '')}
-                        </Text>
-                        <Text style={styles.profileLocation}>
-                            {currentProfile.city || 'Unknown'}, {currentProfile.state || 'Unknown'}
-                        </Text>
-                        {currentProfile.bio && (
-                            <Text style={styles.profileBio} numberOfLines={3}>
-                                {currentProfile.bio}
-                            </Text>
-                        )}
-                    </View>
-                </View>
-
-                <View style={styles.actionButtons}>
-                    <TouchableOpacity onPress={() => handleSwipe('left')} style={styles.actionButton}>
-                        <View style={[styles.actionButtonInner, styles.dislikeButton]}>
-                            <CloseIcon />
-                        </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionButton}>
-                        <View style={[styles.actionButtonInner, styles.superlikeButton]}>
-                            <StarIcon />
-                        </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleSwipe('right')} style={styles.actionButton}>
-                        <View style={[styles.actionButtonInner, styles.likeButton]}>
-                            <LoveIcon />
-                        </View>
-                    </TouchableOpacity>
-                </View>
-            </>
-        );
-    };
+    const hasValidImage = currentProfile.presignedImageUrls && 
+      currentProfile.presignedImageUrls.length > 0 &&
+      typeof currentProfile.presignedImageUrls[0] === 'string';
 
     return (
-        <SafeAreaView style={styles.container}>
-            {/* Header */}
-            {/* <View style={styles.headerContainer}>
-                <View style={styles.headerLeftSection}>
-                    <Image
-                        source={userProfileImage ? { uri: userProfileImage } : DEFAULT_AVATAR}
-                        style={styles.profileIcon}
-                    />
-                </View>
-                <View style={styles.headerCenterSection}>
-                    <Text style={styles.headerTitle}>Discover</Text>
-                </View>
-                <View style={styles.headerRightSection}>
-                    <TouchableOpacity onPress={navigateToSettings} style={styles.headerIconButton}>
-                        <SettingsIcon />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.headerIconButton}>
-                        <NotificationsIcon />
-                    </TouchableOpacity>
-                </View>
-            </View> */}
+      <>
+        <View style={styles.imageContainer}>
+          <Image
+            source={hasValidImage
+              ? { uri: currentProfile.presignedImageUrls[0] }
+              : DEFAULT_AVATAR}
+            style={styles.image}
+            resizeMode={'cover'}
+          />
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>
+              {currentProfile.firstName || 'Unknown'}, {calculateAge(currentProfile.birthDate || '')}
+            </Text>
+            <Text style={styles.profileLocation}>
+              {currentProfile.city || 'Unknown'}, {currentProfile.state || 'Unknown'}
+            </Text>
+            {currentProfile.bio && (
+              <Text style={styles.profileBio} numberOfLines={3}>
+                {currentProfile.bio}
+              </Text>
+            )}
+          </View>
+        </View>
 
-            {/* Main Content */}
-            {renderContent()}
-        </SafeAreaView>
-    )
+        <View style={styles.actionButtons}>
+          <TouchableOpacity onPress={() => handleSwipe('left')} style={styles.actionButton}>
+            <View style={[styles.actionButtonInner, styles.dislikeButton]}>
+              <CloseIcon />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton}>
+            <View style={[styles.actionButtonInner, styles.superlikeButton]}>
+              <StarIcon />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => handleSwipe('right')} style={styles.actionButton}>
+            <View style={[styles.actionButtonInner, styles.likeButton]}>
+              <LoveIcon />
+            </View>
+          </TouchableOpacity>
+        </View>
+      </>
+    );
+  };
 
+  return (
+    <View style={styles.container}>
+      {/* Main Content */}
+      {renderContent()}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

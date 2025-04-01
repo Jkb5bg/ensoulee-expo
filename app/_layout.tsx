@@ -4,6 +4,7 @@ import { AuthProvider } from '@/components/AuthContext';
 import { LoadingProvider } from '@/components/LoadingContext';
 import { useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import { StyleSheet, View } from 'react-native';
 
 export default function RootLayout() {
     useEffect(() => {
@@ -33,16 +34,25 @@ export default function RootLayout() {
     }, []);
 
     return (
-        <LoadingProvider>
-            <AuthProvider>
-                <StatusBar hidden={false} translucent style="light" />
-                <Slot 
-                    screenOptions={{
-                        headerShown: false,
-                        contentStyle: { backgroundColor: 'black' },
-                    }}
-                />
-            </AuthProvider>
-        </LoadingProvider>
+        <View style={styles.container}>
+            <LoadingProvider>
+                <AuthProvider>
+                    <StatusBar hidden={false} translucent style="light" />
+                    <Slot 
+                        screenOptions={{
+                            headerShown: false,
+                            contentStyle: { backgroundColor: 'black' },
+                        }}
+                    />
+                </AuthProvider>
+            </LoadingProvider>
+        </View>
     );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: 'black',
+    }
+})
