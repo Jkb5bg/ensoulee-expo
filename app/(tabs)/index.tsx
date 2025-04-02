@@ -16,6 +16,7 @@ import calculateAge from '@/functions/calculateAge';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { HandleSwipe } from '@/api/HandleSwipe';
 import { useAppData } from '@/components/AppDataContext';
+import * as SplashScreen from 'expo-splash-screen';
 
 // Import your SVG icon components
 import CloseIcon from '@/components/icons/CloseIcon';
@@ -86,6 +87,13 @@ export default function IndexScreen() {
 
   // Refresh data if needed when the component mounts
   useEffect(() => {
+    // Hide splash screen after a brief delay
+    setTimeout(() => {
+      SplashScreen.hideAsync().catch(err => 
+        console.log("Error hiding splash screen:", err)
+      );
+    }, 1000); // Just a short delay to ensure component has rendered
+    
     if (potentialMatches.length === 0 && !isDataLoading) {
       refreshPotentialMatches();
     }
