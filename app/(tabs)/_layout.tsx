@@ -15,10 +15,14 @@ import MessageIcon from '@/components/icons/MessageIcon';
 import UsersIcon from '@/components/icons/UsersIcon';
 import SettingsIcon from '@/components/icons/SettingsIcon';
 import NotificationsIcon from '@/components/icons/NotificationsIcon';
+import { useAppContext } from '@/components/TabsContext';
+import { AppProvider } from '@/components/TabsContext';
 
-const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png'); // Update path as needed
+const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 
 export default function TabsLayout() {
+    const { customHeader, activeChat } = useAppContext();
+    
     // Get screen dimensions
     const [dimensions, setDimensions] = useState({
       window: Dimensions.get('window'),
@@ -104,8 +108,8 @@ export default function TabsLayout() {
           paddingVertical: 5,
         },
         
-        // Custom header with responsive layout
-        headerShown: true,
+        // Only show the header if we're not displaying a custom one
+        headerShown: !(customHeader && route.name === 'messages'),
         header: ({ navigation, route, options }) => {
           let title;
           if (route.name === 'index') title = 'Discover';

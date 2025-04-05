@@ -6,6 +6,7 @@ import { View, ActivityIndicator, Text } from 'react-native';
 import { Redirect } from 'expo-router';
 import LoadingScreen from '@/components/LoadingScreen';
 import { StyleSheet } from 'react-native';
+import { AppProvider } from '@/components/TabsContext';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -55,7 +56,10 @@ export default function IndexScreen() {
 
     // If authenticated, redirect to tabs
     console.log("IndexScreen - Authenticated, redirecting to tabs");
-    return <Redirect href="/(tabs)" />;
+    return (
+        <Redirect href="/(tabs)" />
+    
+);
 }
 
 const styles = StyleSheet.create({

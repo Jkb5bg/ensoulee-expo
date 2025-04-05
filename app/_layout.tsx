@@ -5,6 +5,7 @@ import { LoadingProvider } from '@/components/LoadingContext';
 import { useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { StyleSheet, View } from 'react-native';
+import { AppProvider } from '@/components/TabsContext';
 
 export default function RootLayout() {
     useEffect(() => {
@@ -37,13 +38,15 @@ export default function RootLayout() {
         <View style={styles.container}>
             <LoadingProvider>
                 <AuthProvider>
-                    <StatusBar hidden={false} translucent style="light" />
-                    <Slot 
-                        screenOptions={{
-                            headerShown: false,
-                            contentStyle: { backgroundColor: 'black' },
-                        }}
-                    />
+                    <AppProvider>
+                        <StatusBar hidden={false} translucent style="light" />
+                        <Slot 
+                            screenOptions={{
+                                headerShown: false,
+                                contentStyle: { backgroundColor: 'black' },
+                            }}
+                        />
+                    </AppProvider>
                 </AuthProvider>
             </LoadingProvider>
         </View>
