@@ -1,0 +1,431 @@
+[
+  {
+    "questionNumber": 1,
+    "question": "Are you more introverted or extroverted?",
+    "Answer A": "Introverted",
+    "Answer B": "Extroverted",
+    "Answer C": "Somewhere in between"
+  },
+  {
+    "questionNumber": 2,
+    "question": "Do you enjoy attending large parties and events?",
+    "Answer A": "Yes",
+    "Answer B": "Occasionally",
+    "Answer C": "No"
+  },
+  {
+    "questionNumber": 3,
+    "question": "What's your ideal Friday night?",
+    "Answer A": "Quiet night at home",
+    "Answer B": "Going out with friends",
+    "Answer C": "Exploring a new place"
+  },
+  {
+    "questionNumber": 4,
+    "question": "How do you handle meeting new people?",
+    "Answer A": "I’m shy at first",
+    "Answer B": "I’m friendly and outgoing",
+    "Answer C": "I take my time to warm up"
+  },
+  {
+    "questionNumber": 5,
+    "question": "How would you describe your communication style in a relationship?",
+    "Answer A": "Direct and honest",
+    "Answer B": "Diplomatic and tactful",
+    "Answer C": "Reserved and thoughtful"
+  },
+  {
+    "questionNumber": 6,
+    "question": "How do you handle disagreements with your partner?",
+    "Answer A": "I prefer to talk it out calmly",
+    "Answer B": "I need some space before discussing it",
+    "Answer C": "I tend to avoid disagreements at all costs"
+  },
+  {
+    "questionNumber": 7,
+    "question": "Are you comfortable discussing your feelings and emotions?",
+    "Answer A": "Totally",
+    "Answer B": "Somewhat",
+    "Answer C": "No"
+  },
+  {
+    "questionNumber": 8,
+    "question": "Do you hold onto grudges, or are you quick to forgive and forget?",
+    "Answer A": "Quick to forgive",
+    "Answer B": "I need some time to forgive",
+    "Answer C": "I struggle with forgiving"
+  },
+  {
+    "questionNumber": 9,
+    "question": "How do you react when your partner is upset or stressed?",
+    "Answer A": "I try to comfort and support them",
+    "Answer B": "I give them space to deal with it on their own",
+    "Answer C": "I offer practical solutions to their problems"
+  },
+  {
+    "questionNumber": 10,
+    "question": "How do you handle making decisions as a couple?",
+    "Answer A": "We make decisions together",
+    "Answer B": "We take turns deciding",
+    "Answer C": "One of us usually takes the lead"
+  },
+  {
+    "questionNumber": 11,
+    "question": "What's your view on having individual hobbies and interests in a relationship?",
+    "Answer A": "I think it’s important to have separate interests",
+    "Answer B": "We should share some interests but also have our own",
+    "Answer C": "We should have all our interests in common"
+  },
+  {
+    "questionNumber": 12,
+    "question": "What's your primary love language?",
+    "Answer A": "Words of affirmation",
+    "Answer B": "Physical touch",
+    "Answer C": "Acts of service",
+    "Answer D": "Quality time",
+    "Answer E": "Gifts"
+  },
+  {
+    "questionNumber": 13,
+    "question": "How do you like to express love in a relationship?",
+    "Answer A": "Gifts",
+    "Answer B": "Affectionate touch",
+    "Answer C": "Compliments and affectionate words",
+    "Answer D": "Acts of kindness and help",
+    "Answer E": "Spending time together"
+  },
+  {
+    "questionNumber": 14,
+    "question": "What are your core values in life and in a relationship?",
+    "Answer A": "Honesty and integrity",
+    "Answer B": "Family and loyalty",
+    "Answer C": "Ambition and success",
+    "Answer D": "Kindness and compassion",
+    "Answer E": "Independence and freedom"
+  },
+  {
+    "questionNumber": 15,
+    "question": "How important is spirituality or religion in your life?",
+    "Answer A": "Very important",
+    "Answer B": "Somewhat important",
+    "Answer C": "Not important"
+  },
+  {
+    "questionNumber": 16,
+    "question": "How do you feel about gender roles in a relationship?",
+    "Answer A": "I prefer traditional gender roles",
+    "Answer B": "I believe in equal partnership and shared responsibilities"
+  },
+  {
+    "questionNumber": 17,
+    "question": "What are your views on marriage and long-term commitment?",
+    "Answer A": "I believe in lifelong commitment through marriage",
+    "Answer B": "I'm not open to marriage, but I'm open to commitment",
+    "Answer C": "I’m unsure of long-term commitment"
+  },
+  {
+    "questionNumber": 18,
+    "question": "What are your parenting philosophies and goals?",
+    "Answer A": "I want to be a parent someday",
+    "Answer B": "I'm not sure about parenting",
+    "Answer C": "I don’t want to have children"
+  },
+  {
+    "questionNumber": 19,
+    "question": "What are your career aspirations and goals?",
+    "Answer A": "Ambitious and career-driven",
+    "Answer B": "Balanced between work and personal life",
+    "Answer C": "I prioritize personal life over career"
+  },
+  {
+    "questionNumber": 20,
+    "question": "Are you open to relocating or making major life changes for the sake of a relationship?",
+    "Answer A": "Very open",
+    "Answer B": "Somewhat",
+    "Answer C": "No"
+  },
+  {
+    "questionNumber": 21,
+    "question": "How do you support your partner's goals and dreams?",
+    "Answer A": "Encourage and cheer them on",
+    "Answer B": "Offer practical help and device",
+    "Answer C": "Celebrate in silence"
+  },
+  {
+    "questionNumber": 22,
+    "question": "What are your financial goals and attitudes toward money?",
+    "Answer A": "Saving and financial security are priorities",
+    "Answer B": "Enjoy spending on experiences and items",
+    "Answer C": "I don't have specific financial goals"
+  },
+  {
+    "questionNumber": 23,
+    "question": "How do you feel about participating in your partner's hobbies, even if they're not your own?",
+    "Answer A": "I'm open to it",
+    "Answer B": "It depends on the hobby",
+    "Answer C": "I prefer to have separate interests"
+  },
+  {
+    "questionNumber": 24,
+    "question": "How do you provide emotional support to your partner during tough times?",
+    "Answer A": "Listening and offering empathy",
+    "Answer B": "Offering practical solutions",
+    "Answer C": "Giving space and time alone"
+  },
+  {
+    "questionNumber": 25,
+    "question": "What's your approach to showing vulnerability in a relationship?",
+    "Answer A": "I'm comfortable with being vulnerable",
+    "Answer B": "I’m cautious about showing vulnerability",
+    "Answer C": "I find it difficult to be vulnerable"
+  },
+  {
+    "questionNumber": 26,
+    "question": "How do you express and handle jealousy in a relationship?",
+    "Answer A": "I communicate openly about it",
+    "Answer B": "I try to suppress it",
+    "Answer C": "I rarely experience jealousy"
+  },
+  {
+    "questionNumber": 27,
+    "question": "What's your perspective on trust and trust-building in a relationship?",
+    "Answer A": "Trust is crucial and must be earned",
+    "Answer B": "Trust should be given freely until broken",
+    "Answer C": "Trust is not easy for me to establish"
+  },
+  {
+    "questionNumber": 28,
+    "question": "How do you maintain friendships while in a relationship?",
+    "Answer A": "I make time for both my partner and friends",
+    "Answer B": "My partner is my best friend",
+    "Answer C": "I tend to prioritize my relationship over friends"
+  },
+  {
+    "questionNumber": 29,
+    "question": "How do you express and experience physical intimacy in a relationship?",
+    "Answer A": "I value physical connection and affection",
+    "Answer B": "Physical intimacy is important, but emotional connection matters more",
+    "Answer C": "I'm not very comfortable with physical intimacy"
+  },
+  {
+    "questionNumber": 30,
+    "question": "How do you handle differing levels of sexual desire in a relationship?",
+    "Answer A": "Communicate openly and find compromises",
+    "Answer B": "Respect each other’s boundaries and needs",
+    "Answer C": "It hasn’t been an issue in the past"
+  },
+  {
+    "questionNumber": 31,
+    "question": "How do you envision your ideal future together as a couple?",
+    "Answer A": "Marriage and raising a family",
+    "Answer B": "Traveling and exploring the world",
+    "Answer C": "Pursuing career goals together",
+    "Answer D": "Enjoying a quiet life together"
+  },
+  {
+    "questionNumber": 32,
+    "question": "Are you open to making sacrifices for the sake of the relationship?",
+    "Answer A": "Very open",
+    "Answer B": "Somewhat",
+    "Answer C": "Not open"
+  },
+  {
+    "questionNumber": 33,
+    "question": "How do you handle long-term planning and goal setting as a couple?",
+    "Answer A": "Collaboratively, with shared goals",
+    "Answer B": "We each have our own plans",
+    "Answer C": "I prefer to live in the moment"
+  },
+  {
+    "questionNumber": 34,
+    "question": "What's your attitude towards financial planning and saving for the future?",
+    "Answer A": "We should have a detailed financial plan",
+    "Answer B": "We should save, but prioritize the present",
+    "Answer C": "I don't worry too much about the future"
+  },
+  {
+    "questionNumber": 35,
+    "question": "How important is trust in a relationship to you?",
+    "Answer A": "Extremely important, it’s the foundation",
+    "Answer B": "Very important, but it can be rebuilt",
+    "Answer C": "Not a top priority"
+  },
+  {
+    "questionNumber": 36,
+    "question": "What are your views on maintaining boundaries with ex-partners or friends?",
+    "Answer A": "We should have clear boundaries",
+    "Answer B": "It depends on the circumstances",
+    "Answer C": "I don't see it as a problem"
+  },
+  {
+    "questionNumber": 37,
+    "question": "How do you handle situations where your partner feels insecure or jealous?",
+    "Answer A": "Reassure and communicate openly",
+    "Answer B": "Give them space to work through it",
+    "Answer C": "I struggle with it"
+  },
+  {
+    "questionNumber": 38,
+    "question": "What's your perspective on loyalty and fidelity in a relationship?",
+    "Answer A": "Absolute loyalty is a must",
+    "Answer B": "I believe in fidelity, but I can forgive",
+    "Answer C": "I'm open to different arrangements"
+  },
+  {
+    "questionNumber": 39,
+    "question": "How do you regain trust if it's been broken in a relationship?",
+    "Answer A": "Through open communication and time",
+    "Answer B": "By making amends and proving reliability",
+    "Answer C": "It’s difficult to rebuild trust"
+  },
+  {
+    "questionNumber": 40,
+    "question": "How do you balance independence and interdependence in a relationship?",
+    "Answer A": "We should maintain our independence",
+    "Answer B": "We should be interdependent, but have our own lives too",
+    "Answer C": "We should be completely interdependent"
+  },
+  {
+    "questionNumber": 41,
+    "question": "How do you handle time spent apart from your partner, such as business trips or solo vacations?",
+    "Answer A": "I enjoy the independence",
+    "Answer B": "I miss them, but understand the importance of it",
+    "Answer C": "I'm uncomfortable with significant separation"
+  },
+  {
+    "questionNumber": 42,
+    "question": "What's your approach to shared responsibilities and chores in a relationship?",
+    "Answer A": "We should share responsibilities equally",
+    "Answer B": "We should divide tasks based on strengths and interests",
+    "Answer C": "One person should handle the most of it"
+  },
+  {
+    "questionNumber": 43,
+    "question": "How do you feel about maintaining separate friendships and social circles while in a relationship?",
+    "Answer A": "I think it's healthy and necessary",
+    "Answer B": "I’m open to any arrangement",
+    "Answer C": "I prefer to share social circles"
+  },
+  {
+    "questionNumber": 44,
+    "question": "How do you handle expressing your emotions in a relationship?",
+    "Answer A": "I'm emotionally open and expressive",
+    "Answer B": "I express emotions but may hold some back",
+    "Answer C": "I find it challenging to express emotions"
+  },
+  {
+    "questionNumber": 45,
+    "question": "How do you respond when your partner is upset or going through a tough time?",
+    "Answer A": "I provide comfort and emotional support",
+    "Answer B": "I offer a practical solution to their problem",
+    "Answer C": "I give them space to process their emotions"
+  },
+  {
+    "questionNumber": 46,
+    "question": "How do you handle emotional intimacy and deep conversations in a relationship?",
+    "Answer A": "I enjoy deep emotional connections",
+    "Answer B": "I'm comfortable with it, but need a balance",
+    "Answer C": "I prefer to keep conversations light"
+  },
+  {
+    "questionNumber": 47,
+    "question": "How important is it for you to have emotional intimacy and vulnerability in a relationship?",
+    "Answer A": "Extremely important",
+    "Answer B": "Very important",
+    "Answer C": "Somewhat important",
+    "Answer D": "Not important"
+  },
+  {
+    "questionNumber": 48,
+    "question": "How do you handle your partner's emotional needs when they differ from your own?",
+    "Answer A": "I make an effort to understand and meet their needs",
+    "Answer B": "I may have difficulty satisfying their emotional wants",
+    "Answer C": "I expect them to adapt to my needs"
+  },
+  {
+    "questionNumber": 49,
+    "question": "How important is spending quality time together in a relationship?",
+    "Answer A": "Extremely important",
+    "Answer B": "Very important",
+    "Answer C": "Somewhat important",
+    "Answer D": "Not important"
+  },
+  {
+    "questionNumber": 50,
+    "question": "How often do you like to have one-on-one time with your partner?",
+    "Answer A": "Daily",
+    "Answer B": "A few times a week",
+    "Answer C": "Whenever our schedules allow"
+  },
+  {
+    "questionNumber": 51,
+    "question": "How do you handle spending time apart due to work or other commitments?",
+    "Answer A": "I understand it’s necessary and make the most of our time together",
+    "Answer B": "I miss them, but respect their other commitments",
+    "Answer C": "I struggle with it and feel neglected"
+  },
+  {
+    "questionNumber": 52,
+    "question": "How do you approach conflict resolution in a relationship?",
+    "Answer A": "Open communication and finding solutions",
+    "Answer B": "Giving space to cool off before discussing",
+    "Answer C": "Avoiding confrontation and hoping it resolves itself"
+  },
+  {
+    "questionNumber": 53,
+    "question": "How do you handle unresolved issues or recurring conflicts in a relationship?",
+    "Answer A": "We work together to find lasting solutions",
+    "Answer B": "We learn to live with them and minimize their impact",
+    "Answer C": "We may revisit them but struggle to resolve them"
+  },
+  {
+    "questionNumber": 54,
+    "question": "What's your approach to apologizing and making amends after an argument?",
+    "Answer A": "I apologize and make efforts to repair the relationship",
+    "Answer B": "I may need some time before apologizing",
+    "Answer C": "I expect my partner to apologize first"
+  },
+  {
+    "questionNumber": 55,
+    "question": "How do you handle disagreements about important life decisions, such as where to live or career changes?",
+    "Answer A": "We discuss it openly and reach a mutual decision",
+    "Answer B": "We may compromise or take turns making decisions",
+    "Answer C": "One person usually has the final say"
+  },
+  {
+    "questionNumber": 56,
+    "question": "How important is it for you to maintain financial independence in a relationship?",
+    "Answer A": "Very important",
+    "Answer B": "Somewhat important",
+    "Answer C": "Not important"
+  },
+  {
+    "questionNumber": 57,
+    "question": "How do you handle balancing work and personal life in a relationship?",
+    "Answer A": "We both prioritize work and personal life equally",
+    "Answer B": "One person may prioritize work more than the other",
+    "Answer C": "We struggle to find the right balance"
+  },
+  {
+    "questionNumber": 58,
+    "question": "How do you handle career-related decisions that require relocation or significant lifestyle changes?",
+    "Answer A": "We discuss it together and make decisions as a team",
+    "Answer B": "We consider each other’s preferences and needs",
+    "Answer C": "One person’s career takes precedence"
+  },
+  {
+    "questionNumber": 59,
+    "question": "How do you handle decisions related to your future family, such as when to have children?",
+    "Answer A": "We make such decisions together",
+    "Answer B": "We consider each other's preferences and timing",
+    "Answer C": "It's an individual decision"
+  },
+  {
+    "questionNumber": 60,
+    "question": "How do you feel about the prospect of raising children in a relationship?",
+    "Answer A": "Excited and ready",
+    "Answer B": "Open to it",
+    "Answer C": "Uncertain",
+    "Answer D": "Not interested in having children"
+  }
+]

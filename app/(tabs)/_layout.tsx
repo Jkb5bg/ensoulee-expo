@@ -1,3 +1,4 @@
+// app/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
 import { 
   Text, 
@@ -17,6 +18,7 @@ import SettingsIcon from '@/components/icons/SettingsIcon';
 import NotificationsIcon from '@/components/icons/NotificationsIcon';
 import { useAppContext } from '@/components/TabsContext';
 import { AppProvider } from '@/components/TabsContext';
+import { router } from 'expo-router';
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 
@@ -108,8 +110,9 @@ export default function TabsLayout() {
           paddingVertical: 5,
         },
         
-        // Only show the header if we're not displaying a custom one
-        headerShown: !(customHeader && route.name === 'messages'),
+        // FIXED: Always hide the header for messages tab
+        // This ensures consistent navigation without jumps
+        headerShown: route.name !== 'messages',
         header: ({ navigation, route, options }) => {
           let title;
           if (route.name === 'index') title = 'Discover';
@@ -157,7 +160,12 @@ export default function TabsLayout() {
                   </View>
                   
                   <View style={styles.headerRight}>
-                    <TouchableOpacity style={styles.headerIconButton}>
+                    <TouchableOpacity 
+                      style={styles.headerIconButton} 
+                      onPress={() => { 
+                        router.push('/(onboarding)/profile-setup'); 
+                        console.log('Settings pressed'); 
+                      }}>
                       <SettingsIcon 
                         width={iconSize} 
                         height={iconSize} 

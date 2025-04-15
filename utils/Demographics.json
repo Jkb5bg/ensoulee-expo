@@ -1,0 +1,353 @@
+{
+  "questions": [
+    {
+      "id": 1,
+      "question": "What is your gender identity?",
+      "options": [
+        {"key": "A", "value": "Male"},
+        {"key": "B", "value": "Female"},
+        {"key": "C", "value": "Non-binary"},
+        {"key": "D", "value": "Genderqueer"},
+        {"key": "E", "value": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": 2,
+      "question": "What is your sexual orientation?",
+      "options": [
+        {"key": "A", "value": "Heterosexual (Straight)"},
+        {"key": "B", "value": "Homosexual (Gay/Lesbian)"},
+        {"key": "C", "value": "Bisexual"},
+        {"key": "D", "value": "Pansexual"},
+        {"key": "E", "value": "Asexual"},
+        {"key": "F", "value": "Other"}
+      ]
+    },
+    {
+      "id": 3,
+      "question": "What is your ethnicity or race?",
+      "options": [
+        {"key": "A", "value": "Caucasian/White"},
+        {"key": "B", "value": "African American/Black"},
+        {"key": "C", "value": "Hispanic/Latino"},
+        {"key": "D", "value": "Asian"},
+        {"key": "E", "value": "Native American"},
+        {"key": "F", "value": "Middle Eastern"},
+        {"key": "G", "value": "Pacific Islander"},
+        {"key": "H", "value": "Other"}
+      ]
+    },
+    {
+      "id": 4,
+      "question": "What is your religious affiliation?",
+      "options": [
+        {"key": "A", "value": "Christianity"},
+        {"key": "B", "value": "Islam"},
+        {"key": "C", "value": "Judaism"},
+        {"key": "D", "value": "Hinduism"},
+        {"key": "E", "value": "Buddhism"},
+        {"key": "F", "value": "Sikhism"},
+        {"key": "G", "value": "No religious affiliation"},
+        {"key": "H", "value": "Other"}
+      ]
+    },
+    {
+      "id": 5,
+      "question": "Do you have children?",
+      "options": [
+        {"key": "A", "value": "Yes"},
+        {"key": "B", "value": "No"},
+        {"key": "C", "value": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": 6,
+      "question": "What is your marital status?",
+      "options": [
+        {"key": "A", "value": "Single"},
+        {"key": "B", "value": "Divorced"},
+        {"key": "C", "value": "Widowed"},
+        {"key": "D", "value": "In a Relationship"},
+        {"key": "E", "value": "Open Relationship"},
+        {"key": "F", "value": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": 7,
+      "question": "Do you smoke?",
+      "options": [
+        {"key": "A", "value": "Yes"},
+        {"key": "B", "value": "No"},
+        {"key": "C", "value": "Occasionally"},
+        {"key": "D", "value": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": 8,
+      "question": "Do you drink alcohol?",
+      "options": [
+        {"key": "A", "value": "Yes"},
+        {"key": "B", "value": "No"},
+        {"key": "C", "value": "Occasionally"},
+        {"key": "D", "value": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": 9,
+      "question": "What is your height range?",
+      "options": [
+        {"key": "A", "value": "Under 5'5 (165 cm)"},
+        {"key": "B", "value": "5'5 (165 cm) – 5'9 (175 cm)"},
+        {"key": "C", "value": "5'9 (175 cm) – 6'2 (188 cm)"},
+        {"key": "D", "value": "Over 6'2 (188 cm)"}
+      ]
+    },
+    {
+      "id": 10,
+      "question": "How would you describe your body type?",
+      "options": [
+        {"key": "A", "value": "Slim"},
+        {"key": "B", "value": "Athletic"},
+        {"key": "C", "value": "Average"},
+        {"key": "D", "value": "Curvy"},
+        {"key": "E", "value": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": 11,
+      "question": "Do you have pets?",
+      "options": [
+        {"key": "A", "value": "Yes"},
+        {"key": "B", "value": "No"}
+      ]
+    },
+    {
+      "id": 12,
+      "question": "What is your political affiliation?",
+      "options": [
+        {"key": "A", "value": "Liberal"},
+        {"key": "B", "value": "Conservative"},
+        {"key": "C", "value": "Moderate"},
+        {"key": "D", "value": "Libertarian"},
+        {"key": "E", "value": "Other"},
+        {"key": "F", "value": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": 13,
+      "question": "What is your annual income range?",
+      "options": [
+        {"key": "A", "value": "Under $25,000"},
+        {"key": "B", "value": "$25,000 - $49,999"},
+        {"key": "C", "value": "$50,000 - $74,999"},
+        {"key": "D", "value": "$75,000 - $100,000"},
+        {"key": "E", "value": "$100,000 - $149,999"},
+        {"key": "F", "value": "$150,000 and above"},
+        {"key": "G", "value": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": 14,
+      "question": "What is your highest level of education?",
+      "options": [
+        {"key": "A", "value": "High School"},
+        {"key": "B", "value": "Some College"},
+        {"key": "C", "value": "Bachelor's Degree"},
+        {"key": "D", "value": "Master's Degree"},
+        {"key": "E", "value": "Doctorate/Ph.D/Professional Degree"},
+        {"key": "F", "value": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": 15,
+      "question": "What is your age range?",
+      "options": [
+        {"key": "A", "value": "18 – 24"},
+        {"key": "B", "value": "25 – 34"},
+        {"key": "C", "value": "35 – 44"},
+        {"key": "D", "value": "45 – 54"},
+        {"key": "E", "value": "55+"}
+      ]
+    },
+    {
+      "id": "16",
+      "question": "What gender identities are acceptable in your potential partner?",
+      "options": [
+        {"key": "A", "value": "Any"},
+        {"key": "B", "value": "Male"},
+        {"key": "C", "value": "Female"},
+        {"key": "D", "value": "Non-binary"},
+        {"key": "E", "value": "Genderqueer"},
+        {"key": "F", "value": "Prefer not to specify"}
+      ]
+    },
+    {
+      "id": "17",
+      "question": "What sexual orientations are acceptable in your potential partner?",
+      "options": [
+        {"key": "A", "value": "Any"},
+        {"key": "B", "value": "Heterosexual (Straight)"},
+        {"key": "C", "value": "Homosexual (Gay/Lesbian)"},
+        {"key": "D", "value": "Bisexual"},
+        {"key": "E", "value": "Pansexual"},
+        {"key": "F", "value": "Asexual"},
+        {"key": "G", "value": "Other"}
+      ]
+    },
+    {
+      "id": "18",
+      "question": "What ethnicities or races are acceptable in your potential partner?",
+      "options": [
+        {"key": "A", "value": "Any"},
+        {"key": "B", "value": "Caucasian/White"},
+        {"key": "C", "value": "African American/Black"},
+        {"key": "D", "value": "Hispanic/Latino"},
+        {"key": "E", "value": "Asian"},
+        {"key": "F", "value": "Native American"},
+        {"key": "G", "value": "Middle Eastern"},
+        {"key": "H", "value": "Pacific Islander"},
+        {"key": "I", "value": "Other"}
+      ]
+    },
+    {
+      "id": "19",
+      "question": "What religious affiliations are acceptable in your potential partner?",
+      "options": [
+        {"key": "A", "value": "Any"},
+        {"key": "B", "value": "Christianity"},
+        {"key": "C", "value": "Islam"},
+        {"key": "D", "value": "Judaism"},
+        {"key": "E", "value": "Hinduism"},
+        {"key": "F", "value": "Buddhism"},
+        {"key": "G", "value": "Sikhism"},
+        {"key": "H", "value": "No religious affiliation"},
+        {"key": "I", "value": "Other"}
+      ]
+    },
+    {
+      "id": "20",
+      "question": "Is it acceptable for your potential partner to have children?",
+      "options": [
+        {"key": "A", "value": "Yes"},
+        {"key": "B", "value": "No"},
+        {"key": "C", "value": "Either is fine"}
+      ]
+    },
+    {
+      "id": "21",
+      "question": "What marital statuses are acceptable in your potential partner?",
+      "options": [
+        {"key": "A", "value": "Any"},
+        {"key": "B", "value": "Single"},
+        {"key": "C", "value": "Divorced"},
+        {"key": "D", "value": "Widowed"},
+        {"key": "E", "value": "In a Relationship"},
+        {"key": "F", "value": "Open Relationship"}
+      ]
+    },
+    {
+      "id": "22",
+      "question": "Is it acceptable for your potential partner to smoke?",
+      "options": [
+        {"key": "A", "value": "Yes"},
+        {"key": "B", "value": "No"},
+        {"key": "C", "value": "Occasionally"},
+        {"key": "D", "value": "Does not matter"}
+      ]
+    },
+    {
+      "id": "23",
+      "question": "Is it acceptable for your potential partner to drink alcohol?",
+      "options": [
+        {"key": "A", "value": "Yes"},
+        {"key": "B", "value": "No"},
+        {"key": "C", "value": "Occasionally"},
+        {"key": "D", "value": "Does not matter"}
+      ]
+    },
+    {
+      "id": "24",
+      "question": "What height ranges are acceptable in your potential partner?",
+      "options": [
+        {"key": "A", "value": "Any"},
+        {"key": "B", "value": "Under 5'5 (165 cm)"},
+        {"key": "C", "value": "5'5 (165 cm) – 5'9 (175 cm)"},
+        {"key": "D", "value": "5'9 (175 cm) – 6'2 (188 cm)"},
+        {"key": "E", "value": "Over 6'2 (188 cm)"}
+      ]
+    },
+    {
+      "id": "25",
+      "question": "What body types are acceptable in your potential partner?",
+      "options": [
+        {"key": "A", "value": "Any"},
+        {"key": "B", "value": "Slim"},
+        {"key": "C", "value": "Athletic"},
+        {"key": "D", "value": "Average"},
+        {"key": "E", "value": "Curvy"}
+      ]
+    },
+    {
+      "id": 26,
+      "question": "What are your preferences regarding pets in a potential partner?",
+      "options": [
+        {"key": "A", "value": "Must have pets"},
+        {"key": "B", "value": "Must not have pets"},
+        {"key": "C", "value": "No preference"}
+      ]
+    },
+    {
+      "id": 27,
+      "question": "What political affiliations are you open to in a potential partner?",
+      "options": [
+        {"key": "A", "value": "Any political affiliation"},
+        {"key": "B", "value": "Liberal only"},
+        {"key": "C", "value": "Conservative only"},
+        {"key": "D", "value": "Moderate only"},
+        {"key": "E", "value": "Liberal or Moderate"},
+        {"key": "F", "value": "Conservative or Moderate"},
+        {"key": "G", "value": "No strong conservatives"},
+        {"key": "H", "value": "No strong liberals"}
+      ]
+    },
+    {
+      "id": 28,
+      "question": "What minimum income level do you prefer in a potential partner?",
+      "options": [
+        {"key": "A", "value": "No preference"},
+        {"key": "B", "value": "At least $25,000"},
+        {"key": "C", "value": "At least $50,000"},
+        {"key": "D", "value": "At least $75,000"},
+        {"key": "E", "value": "At least $100,000"},
+        {"key": "F", "value": "At least $150,000"}
+      ]
+    },
+    {
+      "id": 29,
+      "question": "What education level do you prefer in a potential partner?",
+      "options": [
+        {"key": "A", "value": "Any education level"},
+        {"key": "B", "value": "At least some college"},
+        {"key": "C", "value": "At least Bachelor's degree"},
+        {"key": "D", "value": "At least Master's degree"},
+        {"key": "E", "value": "Doctorate/Professional degree required"}
+      ]
+    },
+    {
+      "id": 30,
+      "question": "What age ranges would you consider in a potential partner?",
+      "options": [
+        {"key": "A", "value": "18 – 24 only"},
+        {"key": "B", "value": "25 – 34 only"},
+        {"key": "C", "value": "35 – 44 only"},
+        {"key": "D", "value": "45 – 54 only"},
+        {"key": "E", "value": "55+ only"},
+        {"key": "F", "value": "18 – 34"},
+        {"key": "G", "value": "25 – 44"},
+        {"key": "H", "value": "35 – 54"},
+        {"key": "I", "value": "45+"},
+        {"key": "J", "value": "Any age (within legal limits)"}
+      ]
+    }
+  ]
+}

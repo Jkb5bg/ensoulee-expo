@@ -1,6 +1,7 @@
 import DecodedTokenInfo from "./decodedTokenInfo";
 import { TokenResponse } from 'expo-auth-session/build/TokenRequest';
 import User from "./user";
+import OnboardingTrackingType from "./onboardingTrackingType";
 
 
 // Define extended auth context type to include user data
@@ -16,4 +17,6 @@ export default interface ExtendedAuthContextType {
     user: User | null; // Add full user object
     userProfileImage: string | null; // Add profile image URL
     refreshUserData: () => Promise<void>; // Function to refresh user data
+    onboardingTracking: OnboardingTrackingType;
+    updateOnboardingStatus: (step: keyof OnboardingTrackingType, value: boolean) => Promise<void>;
   }

@@ -36,7 +36,7 @@ export const LoadingProvider = ({ children }: LoadingProviderProps) => {
     setTimeout(() => {
       setIsVisible(false);
       setMessage('Loading...');
-    }, 3000); // Adds a 2-second delay before hiding
+    }); // Adds a 2-second delay before hiding
   };
 
   return (

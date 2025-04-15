@@ -15,6 +15,7 @@ import {router} from "expo-router";
 import * as SplashScreen from 'expo-splash-screen';
 import { useLoading } from './LoadingContext';
 import ExtendedAuthContextType from '@/types/extendedAuthContextType';
+import OnboardingTrackingType from '@/types/onboardingTrackingType';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -22,11 +23,19 @@ WebBrowser.maybeCompleteAuthSession();
 const clientId: string = process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID ?? '';
 const userPoolUri: string = process.env.EXPO_PUBLIC_USER_POOL_ID ?? '';
 const redirectUri = AuthSession.makeRedirectUri();
-const AUTH_TOKENS_KEY = 'auth_tokens';
-const USER_INFO_KEY = 'user_info';
-const USER_DATA_KEY = 'user_data';
-const AUTH_STATE_KEY = 'auth_state';
+const AUTH_TOKENS_KEY: string = 'auth_tokens';
+const USER_INFO_KEY: string = 'user_info';
+const USER_DATA_KEY: string = 'user_data';
+const AUTH_STATE_KEY: string = 'auth_state';
 const USER_PROFILE_IMAGE_KEY = 'user_profile_image'; 
+const ONBOARDING: OnboardingTrackingType = {
+  demographics: false,
+  profileSetup: false,
+  quiz: false,
+  register: false,
+  index: false,
+  overall: false
+};
 
 
 // Define refresh buffer time (refresh token 5 minutes before expiration)
@@ -49,6 +58,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const { showLoading, hideLoading } = useLoading();
   const [user, setUser] = useState<User | null>(null); 
   const [userProfileImage, setUserProfileImage] = useState<string | null>(null);
+  const [onboardingTracking, setOnboardingTracking] = useState<OnboardingTrackingType>(ONBOARDING);
   
   // Add this ref to track if auth is in progress
   const authInProgressRef = useRef<boolean>(false);
@@ -353,8 +363,23 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setIsLoading(false);
       }
     };
+
+    const loadOnboardingTracking = async () => {
+      try {
+        const value = await SecureStore.getItemAsync('onboardingTracking');
+        if (value) {
+          const parsedValue = JSON.parse(value);
+          setOnboardingTracking(parsedValue);
+        } else {
+          await SecureStore.setItemAsync('onboardingTracking', JSON.stringify(ONBOARDING));
+        }
+      } catch (error) {
+        console.error('Error loading onboarding tracking:', error);
+      }
+    };
     
     loadTokensAndState();
+    loadOnboardingTracking();
     
     // Cleanup function to clear the timeout when component unmounts
     return () => {
@@ -461,6 +486,40 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   }, [discoveryDocument, request, response]);
 
+  // Add this function within the AuthProvider component
+const updateOnboardingStatus = async (step: keyof OnboardingTrackingType, value: boolean): Promise<void> => {
+  try {
+    // Create new state with updated value
+    const updatedOnboarding = {
+      ...onboardingTracking,
+      [step]: value
+    };
+    
+    // If all steps except 'overall' are completed, set overall to true
+    if (
+      step !== 'overall' && 
+      updatedOnboarding.demographics && 
+      updatedOnboarding.profileSetup && 
+      updatedOnboarding.quiz && 
+      updatedOnboarding.register &&
+      updatedOnboarding.index
+    ) {
+      updatedOnboarding.overall = true;
+    }
+    
+    // Update state
+    setOnboardingTracking(updatedOnboarding);
+    
+    // Save to secure storage
+    await SecureStore.setItemAsync('onboardingTracking', JSON.stringify(updatedOnboarding));
+    
+    return Promise.resolve();
+  } catch (error) {
+    console.error('Error updating onboarding status:', error);
+    return Promise.reject(error);
+  }
+};
+
   const logout = async () => {
     // Show loading during logout
     showLoading("Signing out...");
@@ -517,7 +576,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     userInfo,
     user,
     userProfileImage,
-    refreshUserData
+    refreshUserData,
+    onboardingTracking,
+    updateOnboardingStatus
   };
 
   // Save tokens and set state

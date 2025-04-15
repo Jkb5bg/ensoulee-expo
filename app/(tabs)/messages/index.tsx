@@ -9,7 +9,9 @@ import {
   Image,
   RefreshControl,
   Alert,
-  Dimensions
+  Dimensions,
+  SafeAreaView,
+  Platform
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/components/AuthContext';
@@ -18,6 +20,8 @@ import MatchType from '@/types/matchType';
 import { GetUserMatches } from '@/api/GetUserMatches';
 import { GetUserProfileImage } from '@/api/GetUserProfileImage';
 import { useAppContext } from '@/components/TabsContext';
+import NotificationsIcon from "@/components/icons/NotificationsIcon";
+import SettingsIcon from "@/components/icons/SettingsIcon";
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 
@@ -29,8 +33,22 @@ export default function Messages() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+  const [isLoading, setIsLoading] = useState(true);
   const token = authTokens?.idToken || '';
   const { setCustomHeader } = useAppContext();
+  const { width, height } = Dimensions.get('window');
+  const isSmallDevice = height < 700;
+  const isLargeDevice = height > 800;
+
+  // Simulate loading for a short period to ensure screen is dark
+  useEffect(() => {
+    // This ensures the screen stays dark during the loading process
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 500); // Half second delay to prevent flashing
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   // Make sure custom header is off when this screen mounts
   useEffect(() => {
@@ -203,6 +221,72 @@ export default function Messages() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
+      <SafeAreaView style={{ backgroundColor: 'rgba(31, 34, 35, 1)' }}>
+      <View style={{
+        height: Platform.OS === 'ios' 
+          ? (isSmallDevice ? 120 : (isLargeDevice ? 160 : 140))
+          : (isSmallDevice ? 100 : 120),
+        paddingTop: Platform.OS === 'ios'
+          ? (isSmallDevice ? 30 : (isLargeDevice ? 50 : 40))
+          : (isSmallDevice ? 20 : 30),
+        backgroundColor: 'rgba(31, 34, 35, 1)',
+      }}>
+        <View style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingHorizontal: 20,
+          marginTop: isSmallDevice ? 15 : (isLargeDevice ? 30 : 20),
+        }}>
+          <View style={{ width: '20%' }}>
+            <Image
+              source={DEFAULT_AVATAR}
+              style={{
+                width: isSmallDevice ? 36 : 40,
+                height: isSmallDevice ? 36 : 40,
+                borderRadius: (isSmallDevice ? 36 : 40) / 2
+              }}
+              resizeMode="cover"
+            />
+          </View>
+          
+          <View style={{ 
+            flex: 1, 
+            alignItems: 'center',
+            paddingLeft: width * 0.05
+          }}>
+            <Text style={{ 
+              color: '#FFFFFF',
+              fontWeight: '600',
+              fontSize: isSmallDevice ? 22 : 24
+            }}>
+              Messages
+            </Text>
+          </View>
+          
+          <View style={{
+            flexDirection: 'row',
+            width: '20%',
+            justifyContent: 'flex-end',
+          }}>
+            <TouchableOpacity style={{ marginLeft: 20 }}>
+              <SettingsIcon 
+                width={isSmallDevice ? 24 : 26} 
+                height={isSmallDevice ? 24 : 26} 
+                color="#F44D7B" 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity style={{ marginLeft: 20 }}>
+              <NotificationsIcon 
+                width={isSmallDevice ? 24 : 26} 
+                height={isSmallDevice ? 24 : 26} 
+                color="#F44D7B" 
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </SafeAreaView>
       
       {loading && matches.length === 0 ? (
         <View style={styles.loadingContainer}>

@@ -1,47 +1,62 @@
+// app/(tabs)/messages/_layout.tsx
 import React from 'react';
 import { Stack } from 'expo-router';
-import { View } from 'react-native';
-import { useAppContext } from '@/components/TabsContext';
+import { View, StyleSheet } from 'react-native';
+import { SQLiteProvider, SQLiteDatabase } from 'expo-sqlite';
+import { initializeDatabase } from '@/storage/chatStorageSQLite';
+
+/**
+ * Database initialization function
+ * This is passed to the SQLiteProvider to set up the database when it opens
+ */
+const setupDatabase = async (db: SQLiteDatabase) => {
+  try {
+    console.log('Initializing chat database...');
+    await initializeDatabase(db);
+    console.log('Chat database initialized successfully');
+  } catch (error) {
+    console.error('Error initializing chat database:', error);
+  }
+};
 
 export default function MessagesLayout() {
-  const { setCustomHeader } = useAppContext();
-  
   return (
-    <View style={{ flex: 1, backgroundColor: '#121212' }}>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: '#121212' },
-          animation: 'slide_from_right',
-          // Slightly faster animation for smoother transition
-          animationDuration: 250,
-          presentation: 'card', // Changed from 'modal' to 'card'
-          gestureEnabled: true,
-          gestureDirection: 'horizontal',
-        }}
-      >
-        <Stack.Screen 
-          name="index" 
-          listeners={{
-            beforeRemove: () => {
-              // Set custom header to true before navigating away
-              setCustomHeader(true);
-            },
+    <SQLiteProvider databaseName="ensoulee_chats.db" onInit={setupDatabase}>
+      <View style={styles.container}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: '#121212' },
+            animation: 'slide_from_right',
+            animationDuration: 300,
+            // Use 'containedModal' or 'containedTransparentModal' for smoother transitions
+            presentation: 'containedTransparentModal',
+            // Add gesture handling for iOS
+            gestureEnabled: true,
+            gestureDirection: 'horizontal',
           }}
-        />
-        <Stack.Screen 
-          name="chat" 
-          options={{
-            contentStyle: { backgroundColor: '#121212' }
-          }}
-          listeners={{
-            beforeRemove: () => {
-              // Reset custom header when navigating back from chat
-              setCustomHeader(false);
-            },
-          }}
-        />
-      </Stack>
-    </View>
+        >
+          <Stack.Screen 
+            name="index"
+            options={{
+              contentStyle: { backgroundColor: '#121212' }
+            }} 
+          />
+          <Stack.Screen 
+            name="chat" 
+            options={{
+              contentStyle: { backgroundColor: '#121212' }
+            }} 
+          />
+        </Stack>
+      </View>
+    </SQLiteProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#121212', // Ensure the background is consistently dark
+  }
+});

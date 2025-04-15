@@ -92,6 +92,7 @@ export default function IndexScreen() {
       SplashScreen.hideAsync().catch(err => 
         console.log("Error hiding splash screen:", err)
       );
+      hideLoading();
     }, 1000); // Just a short delay to ensure component has rendered
     
     if (potentialMatches.length === 0 && !isDataLoading) {
