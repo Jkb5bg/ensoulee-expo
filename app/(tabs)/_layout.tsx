@@ -163,7 +163,7 @@ export default function TabsLayout() {
                     <TouchableOpacity 
                       style={styles.headerIconButton} 
                       onPress={() => { 
-                        router.push('/(onboarding)/profile-setup'); 
+                        router.push('/settings'); 
                         console.log('Settings pressed'); 
                       }}>
                       <SettingsIcon 
@@ -190,6 +190,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" />
       <Tabs.Screen name="matches" />
       <Tabs.Screen name="messages" />
+      {/* Remove the settings tab here */}
     </Tabs>
   );
 }

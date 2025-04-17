@@ -93,6 +93,7 @@ const PersonalInfoForm: React.FC<PersonalInfoFormProps> = ({ onNext, matchSex })
           onValueChange={(value) => setState(value)}
           style={styles.picker}
           mode="dropdown"
+          itemStyle={styles.pickerItem}
         >
           <Picker.Item label="Your State" value="" />
           {Object.keys(locationsData).map((stateName) => (
@@ -109,6 +110,7 @@ const PersonalInfoForm: React.FC<PersonalInfoFormProps> = ({ onNext, matchSex })
           style={styles.picker}
           enabled={!!state}
           mode="dropdown"
+          itemStyle={styles.pickerItem}
         >
           <Picker.Item label="Your City" value="" />
           {cities.map((cityName) => (
@@ -124,6 +126,7 @@ const PersonalInfoForm: React.FC<PersonalInfoFormProps> = ({ onNext, matchSex })
           onValueChange={(value) => setOccupation(value)}
           style={styles.picker}
           mode="dropdown"
+          itemStyle={styles.pickerItem}
         >
           <Picker.Item label="Your Occupation" value="" />
           {(occupationsData as OccupationsData).occupations.map((occ: string) => (
@@ -179,28 +182,34 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   formControl: {
-    marginBottom: 16,
+    marginBottom: 20, // Increased from 16 to provide more vertical spacing
   },
   picker: {
     backgroundColor: 'rgba(43, 46, 47, 1)',
-    color: 'rgba(255, 255, 255, 0.4)',
-    fontSize: 15,
-    height: 48,
+    color: 'rgba(255, 255, 255, 0.9)', // Increased opacity for better readability
+    fontSize: 16, // Slightly larger font
+    height: 60, // Increased from 48 to make taller
     borderRadius: 8,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
+    marginVertical: 5, // Added to create some space between elements
+  },
+  pickerItem: {
+    fontSize: 16,
+    height: 120, // This will affect the dropdown item height on iOS
+    color: 'white',
   },
   textArea: {
     backgroundColor: 'rgba(43, 46, 47, 1)',
-    color: 'rgba(255, 255, 255, 0.4)',
-    fontSize: 15,
+    color: 'rgba(255, 255, 255, 0.9)', // Increased opacity for better readability
+    fontSize: 16, // Slightly larger font
     fontWeight: '400',
-    height: 100,
+    height: 120, // Increased from 100 for more space
     borderRadius: 8,
-    padding: 8,
+    padding: 12,
     textAlignVertical: 'top',
   },
   buttonContainer: {
-    paddingTop: 20,
+    paddingTop: 24, // Increased from 20 for more space
   },
   registerButton: {
     width: '100%',
@@ -215,11 +224,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: '100%',
     borderRadius: 8,
-    height: 48,
+    height: 56, // Increased from 48 for a larger button
   },
   registerButtonText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 18, // Slightly larger
     fontWeight: '600',
     textAlign: 'center',
   },

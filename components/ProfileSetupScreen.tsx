@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Image, StyleSheet, TouchableOpacity, View, Text, TextInput } from 'react-native';
+import { Image, StyleSheet, TouchableOpacity, View, Text, TextInput, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/components/AuthContext';
@@ -13,14 +13,14 @@ interface ProfileSetupScreenProps {
 }
 
 const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({ onComplete }) => {
-  const [image, setImage] = useState<string | null>(null);
+  const [images, setImages] = useState<string[]>([]); // Now an array of image URIs
   const [bio, setBio] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const { userInfo, getValidToken } = useAuth();
   const { showLoading, hideLoading } = useLoading();
 
-  const pickImage = async () => {
+  const pickImages = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
@@ -31,18 +31,28 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({ onComplete }) =
       
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
+        allowsEditing: false, // Set to false for multiple selections
         aspect: [1, 1],
         quality: 1,
+        allowsMultipleSelection: true, // Enable multiple selection
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setImage(result.assets[0].uri);
+        // Add new images to existing ones (up to a maximum, e.g., 5)
+        const newImageUris = result.assets.map(asset => asset.uri);
+        setImages(prevImages => {
+          const combined = [...prevImages, ...newImageUris];
+          return combined.slice(0, 6); // Limit to 6 images
+        });
       }
     } catch (error) {
-      console.error('Error picking image:', error);
-      alert('Failed to select image. Please try again.');
+      console.error('Error picking images:', error);
+      alert('Failed to select images. Please try again.');
     }
+  };
+
+  const removeImage = (index: number) => {
+    setImages(prevImages => prevImages.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async () => {
@@ -65,11 +75,20 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({ onComplete }) =
         }
       }
 
-      // Upload the profile image if selected
-      if (image) {
-        const imageUploadSuccess = await UploadProfileImage(userInfo, token, image);
-        if (!imageUploadSuccess) {
-          throw new Error('Failed to upload profile image');
+      // Upload multiple images if selected
+      let allUploadsSuccessful = true;
+      if (images.length > 0) {
+        for (const imageUri of images) {
+          const imageUploadSuccess = await UploadProfileImage(userInfo, token, imageUri);
+          if (!imageUploadSuccess) {
+            allUploadsSuccessful = false;
+            console.error(`Failed to upload image: ${imageUri}`);
+          }
+        }
+        
+        if (!allUploadsSuccessful) {
+          console.warn('Some images failed to upload');
+          // Continue anyway since some images might have been uploaded successfully
         }
       }
 
@@ -85,55 +104,86 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({ onComplete }) =
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerContainer}>
-        <Text style={styles.header}>Profile</Text>
-      </View>
-      
-      <TouchableOpacity style={styles.imageContainer} onPress={pickImage}>
-        {image ? (
-          <Image source={{ uri: image }} style={styles.image} />
-        ) : (
-          <ProfileImagePlaceholder />
-        )}
-      </TouchableOpacity>
-      
-      <View style={styles.textAreaContainer}>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          numberOfLines={6}
-          placeholder="Enter your bio here..."
-          placeholderTextColor="rgba(255, 255, 255, 0.4)"
-          value={bio}
-          onChangeText={setBio}
-          textAlignVertical="top"
-        />
-      </View>
-      
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity 
-          style={styles.registerButton} 
-          onPress={handleSubmit}
-          disabled={isSubmitting}
-        >
-          <LinearGradient
-            colors={['#FF7B6F', '#F44D7B']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.registerGradient}
+    <ScrollView style={styles.scrollView}>
+      <View style={styles.container}>
+        <View style={styles.headerContainer}>
+          <Text style={styles.header}>Profile</Text>
+        </View>
+        
+        {/* Image preview section */}
+        <View style={styles.imageGridContainer}>
+          {images.length === 0 ? (
+            <TouchableOpacity style={styles.addImageButton} onPress={pickImages}>
+              <ProfileImagePlaceholder />
+              <Text style={styles.addImageText}>Add Photos</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.imageGrid}>
+              {images.map((uri, index) => (
+                <View key={index} style={styles.imageContainer}>
+                  <Image source={{ uri }} style={styles.image} />
+                  <TouchableOpacity 
+                    style={styles.removeImageButton}
+                    onPress={() => removeImage(index)}
+                  >
+                    <Text style={styles.removeImageText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              
+              {images.length < 5 && (
+                <TouchableOpacity 
+                  style={styles.smallAddButton} 
+                  onPress={pickImages}
+                >
+                  <Text style={styles.addButtonText}>+</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+        
+        <View style={styles.textAreaContainer}>
+          <TextInput
+            style={styles.textArea}
+            multiline
+            numberOfLines={6}
+            placeholder="Enter your bio here..."
+            placeholderTextColor="rgba(255, 255, 255, 0.4)"
+            value={bio}
+            onChangeText={setBio}
+            textAlignVertical="top"
+          />
+        </View>
+        
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity 
+            style={styles.registerButton} 
+            onPress={handleSubmit}
+            disabled={isSubmitting}
           >
-            <Text style={styles.registerButtonText}>
-              {isSubmitting ? 'Submitting...' : 'Next'}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={['#FF7B6F', '#F44D7B']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.registerGradient}
+            >
+              <Text style={styles.registerButtonText}>
+                {isSubmitting ? 'Submitting...' : 'Next'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
+  scrollView: {
+    flex: 1,
+    backgroundColor: '#181818',
+  },
   container: {
     flex: 1,
     padding: 16,
@@ -147,21 +197,69 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '600',
   },
-  imageContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 2,
-    borderColor: '#ff5f6d',
+  imageGridContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  addImageButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
-    alignSelf: 'center',
+  },
+  addImageText: {
+    color: '#FF7B6F',
+    fontSize: 16,
+    marginTop: 8,
+  },
+  imageGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  imageContainer: {
+    width: 100,
+    height: 100,
+    margin: 5,
+    position: 'relative',
   },
   image: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#F44D7B',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeImageText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  smallAddButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    backgroundColor: 'rgba(66, 66, 66, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    margin: 5,
+    borderWidth: 1,
+    borderColor: '#444',
+    borderStyle: 'dashed',
+  },
+  addButtonText: {
+    color: 'white',
+    fontSize: 32,
   },
   textAreaContainer: {
     paddingVertical: 20,

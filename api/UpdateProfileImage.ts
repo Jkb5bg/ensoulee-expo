@@ -7,68 +7,58 @@ export const UploadProfileImage = async (
   imageUri: string
 ): Promise<boolean> => {
   const API_URL = process.env.EXPO_PUBLIC_ENSOULEE_API_URL;
+  console.log('Uploading profile image...');
+  console.log('API URL:', API_URL);
 
   try {
     if (!authToken || !userInfo?.apiKey) {
       throw new Error('No valid token or API key');
     }
 
-    // First, get a pre-signed URL for the image upload
-    const presignedUrlResponse = await fetch(`${API_URL}/user/self/image/upload-url`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`,
-        'x-api-key': userInfo.apiKey
-      }
-    });
-
-    if (!presignedUrlResponse.ok) {
-      throw new Error('Failed to get image upload URL');
-    }
-
-    const { uploadUrl, key } = await presignedUrlResponse.json();
-
-    // Upload the image to the pre-signed URL
+    // Get local file info
     const fileInfo = await FileSystem.getInfoAsync(imageUri);
+    console.log('File exists:', fileInfo.exists);
+    
     if (!fileInfo.exists) {
       throw new Error('File does not exist');
     }
 
-    const fileType = imageUri.split('.').pop()?.toLowerCase();
-    let mimeType = 'image/jpeg'; // Default
-    if (fileType === 'png') {
-      mimeType = 'image/png';
-    } else if (fileType === 'gif') {
-      mimeType = 'image/gif';
+    // Determine file type
+    let fileType = 'image/jpeg'; // Default
+    if (imageUri.endsWith('.png')) {
+      fileType = 'image/png';
+    } else if (imageUri.endsWith('.gif')) {
+      fileType = 'image/gif';
     }
 
-    const uploadResponse = await FileSystem.uploadAsync(uploadUrl, imageUri, {
-      httpMethod: 'PUT',
-      headers: {
-        'Content-Type': mimeType
-      },
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT
-    });
+    // Create form data
+    const formData = new FormData();
+    formData.append('file', {
+      uri: imageUri,
+      name: 'profile_image.jpg',
+      type: fileType,
+    } as any);
 
-    if (uploadResponse.status !== 200) {
-      throw new Error('Failed to upload image');
-    }
-
-    // Notify backend that the image is uploaded and should be associated with the user
-    const confirmResponse = await fetch(`${API_URL}/user/self/image`, {
+    // Direct upload to the server
+    const response = await fetch(`${API_URL}api/images/upload`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${authToken}`,
-        'x-api-key': userInfo.apiKey
+        'x-api-key': userInfo.apiKey,
+        // Important: Do NOT set Content-Type here, it will be set automatically with the boundary
       },
-      body: JSON.stringify({ key })
+      body: formData
     });
 
-    if (!confirmResponse.ok) {
-      throw new Error('Failed to confirm image upload');
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Error response:', response.status, errorText);
+      throw new Error(`Failed to upload image: ${response.status} ${errorText}`);
     }
+
+    // Parse the response
+    const data = await response.json();
+    console.log('Upload response:', data);
 
     return true;
   } catch (error) {
