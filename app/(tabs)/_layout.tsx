@@ -62,6 +62,11 @@ export default function TabsLayout() {
     const profileIconSize = isSmallDevice ? 36 : 40;
     const titleFontSize = isSmallDevice ? 22 : 24;
 
+  // Navigation handler for settings
+  const navigateToSettings = () => {
+    router.push('/settings');
+  };
+
   return (
     <Tabs
       screenOptions={({ route }) => ({
@@ -162,10 +167,8 @@ export default function TabsLayout() {
                   <View style={styles.headerRight}>
                     <TouchableOpacity 
                       style={styles.headerIconButton} 
-                      onPress={() => { 
-                        router.push('/settings'); 
-                        console.log('Settings pressed'); 
-                      }}>
+                      onPress={navigateToSettings}
+                    >
                       <SettingsIcon 
                         width={iconSize} 
                         height={iconSize} 

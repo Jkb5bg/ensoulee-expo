@@ -41,6 +41,7 @@ export default function IndexScreen() {
 
   // Navigate to settings
   const navigateToSettings = () => {
+    router.push('/settings');
   }
 
   // Logout and redirect

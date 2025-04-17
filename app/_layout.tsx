@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { Slot } from 'expo-router';
+import { Stack } from 'expo-router';
 import { AuthProvider } from '@/components/AuthContext';
 import { LoadingProvider } from '@/components/LoadingContext';
 import { useEffect } from 'react';
@@ -40,12 +40,50 @@ export default function RootLayout() {
                 <AuthProvider>
                     <AppProvider>
                         <StatusBar hidden={false} translucent style="light" />
-                        <Slot 
+                        {/* Define Stack navigation for the entire app */}
+                        <Stack 
                             screenOptions={{
                                 headerShown: false,
                                 contentStyle: { backgroundColor: 'black' },
+                                animation: 'slide_from_right',
                             }}
-                        />
+                        >
+                            {/* Regular app flow */}
+                            <Stack.Screen name="index" />
+                            
+                            {/* Grouped routes */}
+                            <Stack.Screen 
+                                name="(tabs)" 
+                                options={{ 
+                                    headerShown: false,
+                                }}
+                            />
+                            
+                            {/* Auth flow */}
+                            <Stack.Screen 
+                                name="(auth)" 
+                                options={{
+                                    headerShown: false,
+                                }}
+                            />
+                            
+                            {/* Onboarding flow */}
+                            <Stack.Screen 
+                                name="(onboarding)" 
+                                options={{
+                                    headerShown: false,
+                                }}
+                            />
+                            
+                            {/* Settings screen - will stack on top of (tabs) */}
+                            <Stack.Screen 
+                                name="settings" 
+                                options={{
+                                    headerShown: false,
+                                    presentation: 'card',
+                                }}
+                            />
+                        </Stack>
                     </AppProvider>
                 </AuthProvider>
             </LoadingProvider>
@@ -58,4 +96,4 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: 'black',
     }
-})
+});
