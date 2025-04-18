@@ -269,7 +269,7 @@ export default function Messages() {
             width: '20%',
             justifyContent: 'flex-end',
           }}>
-            <TouchableOpacity style={{ marginLeft: 20 }}>
+            <TouchableOpacity style={{ marginLeft: 20 }} onPress={() => router.push('/settings')}>
               <SettingsIcon 
                 width={isSmallDevice ? 24 : 26} 
                 height={isSmallDevice ? 24 : 26} 
