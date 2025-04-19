@@ -48,23 +48,43 @@ export const GetUserProfileImage = async (
       return cleanPresignedUrl(filename);
     }
     
-    // IMPORTANT FIX: Check if the backend URL already contains the API path
-    // This is crucial for preventing the concatenation issue
+    // FIXED: Ensure we don't have duplicate /dev in the URL
     let baseUrl = BACKEND_URL;
     
-    // Ensure the URL doesn't end with a slash
+    // Ensure the URL doesn't end with a trailing slash
     if (baseUrl.endsWith('/')) {
       baseUrl = baseUrl.slice(0, -1);
     }
     
-    // Construct API URL for the image request - use BACKEND_URL as it's more likely correct
-    // Ensure we use the correct path format to avoid the concatenation issue
-    const imageUrl = `${baseUrl}/dev/api/images/${tokenInfo.userName}/${encodeURIComponent(filename)}`;
+    // FIXED: Check if 'dev' is already included in the base URL
+    // Also ensure we don't have duplicate api paths
+    let imagePath = `api/images/${tokenInfo.userName}/${encodeURIComponent(filename)}`;
+    
+    // If baseUrl already contains dev/ and api/, we just need the additional path
+    if (baseUrl.includes('/dev/api/')) {
+      imagePath = `images/${tokenInfo.userName}/${encodeURIComponent(filename)}`;
+    } 
+    // If baseUrl already contains dev/ but not api/
+    else if (baseUrl.includes('/dev/')) {
+      imagePath = `api/images/${tokenInfo.userName}/${encodeURIComponent(filename)}`;
+    }
+    // If baseUrl doesn't contain dev/ but should
+    else if (!baseUrl.includes('/dev/')) {
+      baseUrl = `${baseUrl}/dev`;
+      imagePath = `api/images/${tokenInfo.userName}/${encodeURIComponent(filename)}`;
+    }
+    
+    // Construct the full URL
+    let imageUrl = `${baseUrl}/${imagePath}`;
+
+    if (imageUrl.includes('/dev/dev')) {
+      imageUrl = imageUrl.replace('/dev/dev/', '/dev/')
+    }
     
     console.log(`Requesting image URL: ${imageUrl}`);
     
     // Fetch the image URL with better error handling
-    const response = await fetch(imageUrl, {
+    const response = await fetch(imageUrl || imageUrl, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -98,7 +118,7 @@ export const GetUserProfileImage = async (
     let presignedUrl = await response.text();
     console.log(`Got presigned URL response (${presignedUrl.length} chars)`);
     
-    // If the response is the S3 URL, clean and return it
+    // Clean and return the S3 URL
     return cleanPresignedUrl(presignedUrl);
   } catch (error) {
     console.error('Error loading user profile image:', error);

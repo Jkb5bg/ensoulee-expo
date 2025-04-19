@@ -222,22 +222,23 @@ export default function Messages() {
     <View style={styles.container}>
       <StatusBar style="light" />
       <SafeAreaView style={{ backgroundColor: 'rgba(31, 34, 35, 1)' }}>
-      <View style={{
-        height: Platform.OS === 'ios' 
-          ? (isSmallDevice ? 120 : (isLargeDevice ? 160 : 140))
-          : (isSmallDevice ? 100 : 120),
-        paddingTop: Platform.OS === 'ios'
-          ? (isSmallDevice ? 30 : (isLargeDevice ? 50 : 40))
-          : (isSmallDevice ? 20 : 30),
-        backgroundColor: 'rgba(31, 34, 35, 1)',
-      }}>
         <View style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          paddingHorizontal: 20,
-          marginTop: isSmallDevice ? 15 : (isLargeDevice ? 30 : 20),
+          height: Platform.OS === 'ios' 
+            ? (isSmallDevice ? 120 : (isLargeDevice ? 160 : 140))
+            : (isSmallDevice ? 100 : 120),
+          paddingTop: Platform.OS === 'ios'
+            ? (isSmallDevice ? 30 : (isLargeDevice ? 50 : 40))
+            : (isSmallDevice ? 20 : 30),
+          backgroundColor: 'rgba(31, 34, 35, 1)',
         }}>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingHorizontal: 20,
+            marginTop: isSmallDevice ? 15 : (isLargeDevice ? 30 : 20),
+            height: 70, 
+          }}>
           <View style={{ width: '20%' }}>
             <Image
               source={DEFAULT_AVATAR}

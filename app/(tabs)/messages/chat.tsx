@@ -12,7 +12,8 @@ import {
   Dimensions,
   Platform,
   ActivityIndicator,
-  Alert
+  Alert,
+  StatusBar as RNStatusBar
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/components/AuthContext';
@@ -42,13 +43,14 @@ const { width, height } = Dimensions.get('window');
 const isSmallDevice = height < 700;
 const isLargeDevice = height > 800;
 
-const chatHeaderPaddingTop = Platform.OS === 'ios' 
-  ? (isSmallDevice ? 30 : (isLargeDevice ? 50 : 40))
-  : (isSmallDevice ? 20 : 30);
+const chatHeaderPaddingTop = Platform.OS === 'ios'
+  ? (isSmallDevice ? 40 : (isLargeDevice ? 60 : 50))
+  : (isSmallDevice ? 30 : 40);
 
-const chatHeaderHeight = Platform.OS === 'ios' 
-  ? (isSmallDevice ? 120 : (isLargeDevice ? 160 : 140))
-  : (isSmallDevice ? 100 : 120);
+const chatHeaderHeight = Platform.OS === 'ios'
+  ? (isSmallDevice ? 90 : (isLargeDevice ? 130 : 110))
+  : (isSmallDevice ? 80 : 100);
+  
 
 export default function ChatScreen() {
   // Get route params
@@ -57,6 +59,12 @@ export default function ChatScreen() {
   const userName = params.userName as string;
   const userId = params.userId as string;
   const profileImage = params.profileImage as string;
+  const safeProfileUri = React.useMemo(() => {
+    if (!profileImage) return null;
+    // first encode URI components, then fix the pluses
+    return encodeURI(profileImage).replace(/\+/g, '%2B');
+  }, [profileImage]);
+  
   
   // Context and state
   const { user, userInfo, authTokens } = useAuth();
@@ -69,6 +77,73 @@ export default function ChatScreen() {
   const [newMessage, setNewMessage] = useState('');
   const flatListRef = useRef<FlatList>(null);
   const token = authTokens?.idToken || '';
+    // Add these state variables to your component
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<number[]>([]); // indices of matching messages
+  const [currentResultIndex, setCurrentResultIndex] = useState(-1);
+
+  // Add a search function
+  const searchMessages = (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setCurrentResultIndex(-1);
+      return;
+    }
+    
+    const lowerQuery = query.toLowerCase();
+    const results: number[] = [];
+    
+    // Find all messages that match the query
+    messages.forEach((message, index) => {
+      if (message.content && message.content.toLowerCase().includes(lowerQuery)) {
+        results.push(index);
+      }
+    });
+    
+    setSearchResults(results);
+    setCurrentResultIndex(results.length > 0 ? 0 : -1);
+    
+    // Scroll to the first result if there are any
+    if (results.length > 0 && flatListRef.current) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({
+          index: results[0],
+          animated: true,
+          viewPosition: 0.5 // Center the item
+        });
+      }, 100);
+    }
+  };
+
+  // Add navigation through search results
+  const goToNextResult = () => {
+    if (searchResults.length === 0) return;
+    
+    const nextIndex = (currentResultIndex + 1) % searchResults.length;
+    setCurrentResultIndex(nextIndex);
+    
+    flatListRef.current?.scrollToIndex({
+      index: searchResults[nextIndex],
+      animated: true,
+      viewPosition: 0.5
+    });
+  };
+
+  const goToPreviousResult = () => {
+    if (searchResults.length === 0) return;
+    
+    const prevIndex = currentResultIndex <= 0 
+      ? searchResults.length - 1 
+      : currentResultIndex - 1;
+    setCurrentResultIndex(prevIndex);
+    
+    flatListRef.current?.scrollToIndex({
+      index: searchResults[prevIndex],
+      animated: true,
+      viewPosition: 0.5
+    });
+  };
   
   // Set custom header when component mounts
   useEffect(() => {
@@ -76,6 +151,46 @@ export default function ChatScreen() {
     // Cleanup function
     return () => setCustomHeader(false);
   }, []);
+
+  useEffect(() => {
+    if (safeProfileUri) {
+      Image.prefetch(safeProfileUri)
+        .catch(err => console.warn("prefetch failed:", err));
+    }
+  }, [safeProfileUri]);
+  
+
+
+  const renderItem = ({ item }: { item: MessageType | { isDateSeparator: true; date: string; timestamp: number } }) => {
+    // Check if this is a date separator
+    if ('isDateSeparator' in item && item.isDateSeparator) {
+      return (
+        <View style={styles.dateSeparator}>
+          <Text style={styles.dateSeparatorText}>{item.date}</Text>
+        </View>
+      );
+    }
+    
+    // Otherwise render a normal message
+    const message = item as MessageType;
+    const isCurrentUser = message.senderId === (user?.userName || userInfo?.userName);
+    
+    return (
+      <View style={[
+        styles.messageBubble,
+        isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage,
+        message.pending && styles.pendingMessage
+      ]}>
+        <Text style={styles.messageText}>
+          {message.content}
+        </Text>
+        <Text style={styles.messageTime}>
+          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {message.pending && ' • Sending...'}
+        </Text>
+      </View>
+    );
+  };
   
   // Load messages from local storage first
   const loadLocalMessages = useCallback(async () => {
@@ -106,6 +221,29 @@ export default function ChatScreen() {
       return null;
     }
   }, [db, matchId]);
+
+  const formatMessageDate = (timestamp: number): string => {
+    const now = new Date();
+    const messageDate = new Date(timestamp);
+    
+    // Calculate the difference in days
+    const diffTime = now.getTime() - messageDate.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      // Today - just show time
+      return messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (diffDays === 1) {
+      // Yesterday
+      return 'Yesterday';
+    } else if (diffDays < 7) {
+      // Within the last week - show day name
+      return messageDate.toLocaleDateString([], { weekday: 'long' });
+    } else {
+      // Older than a week - show month and day
+      return messageDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+  };
   
   // Fetch messages from backend
   const fetchMessages = useCallback(async (lastSynced?: number) => {
@@ -238,6 +376,64 @@ const checkForUpdates = async () => {
     console.error('Error checking for message updates:', error);
   }
 };
+
+  // Group messages by date and add date separators
+  const groupMessagesByDate = (messageList: MessageType[]) => {
+    if (!messageList || messageList.length === 0) return [];
+    
+    type DateSeparator = { isDateSeparator: true; date: string; timestamp: number };
+    const grouped: (MessageType | DateSeparator)[] = [];
+    let currentDate: string | null = null;
+    
+    // Sort messages by timestamp
+    const sortedMessages = [...messageList].sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Process each message
+    sortedMessages.forEach(message => {
+      const messageDate = new Date(message.timestamp);
+      const dateString = messageDate.toDateString(); // e.g. "Mon Apr 15 2025"
+      
+      // If this is a message from a new date, add a date separator
+      if (dateString !== currentDate) {
+        currentDate = dateString;
+        
+        // Format the date for display
+        let displayDate: string;
+        const today = new Date().toDateString();
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayString = yesterday.toDateString();
+        
+        if (dateString === today) {
+          displayDate = "Today";
+        } else if (dateString === yesterdayString) {
+          displayDate = "Yesterday";
+        } else {
+          // Format as "Monday, April 15" or similar
+          displayDate = messageDate.toLocaleDateString(undefined, {
+            weekday: 'long', 
+            month: 'long', 
+            day: 'numeric'
+          });
+        }
+        
+        // Add the date separator
+        grouped.push({
+          isDateSeparator: true,
+          date: displayDate,
+          timestamp: message.timestamp // Keep timestamp for sorting
+        });
+      }
+      
+      // Add the message
+      grouped.push(message);
+    });
+    
+    return grouped;
+  };
+
+  const groupedMessages = groupMessagesByDate(messages);
+
 
   // Handle sending a message
   const handleSendMessage = useCallback(async () => {
@@ -422,27 +618,47 @@ const checkForUpdates = async () => {
     fetchMessages();
   }, [fetchMessages]);
 
+  const highlightSearchTerm = (text: string, query: string) => {
+    if (!query.trim()) return text;
+    
+    const parts = text.split(new RegExp(`(${query})`, 'gi'));
+    return (
+      <>
+        {parts.map((part, i) => 
+          part.toLowerCase() === query.toLowerCase() ? (
+            <Text key={i} style={styles.highlightedText}>{part}</Text>
+          ) : (
+            part
+          )
+        )}
+      </>
+    );
+  };
+
   // Render message bubble
-  const renderMessageItem = ({ item }: { item: MessageType }) => {
+  const renderMessageItem = ({ item, index }: { item: MessageType; index: number }) => {
     const isCurrentUser = item.senderId === (user?.userName || userInfo?.userName);
+    const isSearchResult = searchResults.includes(index);
+    const isCurrentResult = index === searchResults[currentResultIndex];
     
     return (
       <View style={[
         styles.messageBubble,
         isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage,
-        item.pending && styles.pendingMessage
+        item.pending && styles.pendingMessage,
+        isSearchResult && styles.searchResultMessage,
+        isCurrentResult && styles.currentSearchResult
       ]}>
-        <Text style={[
-          styles.messageText,
-          !isCurrentUser && { color: '#333' } // Darker text for received messages
-        ]}>
-          {item.content}
+        <Text style={styles.messageText}>
+          {searchQuery && item.content ? (
+            // Highlight search term in the message
+            highlightSearchTerm(item.content, searchQuery)
+          ) : (
+            item.content
+          )}
         </Text>
-        <Text style={[
-          styles.messageTime,
-          !isCurrentUser && { color: 'rgba(0, 0, 0, 0.5)' } // Darker time for received messages
-        ]}>
-          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        <Text style={styles.messageTime}>
+          {formatMessageDate(item.timestamp)}
           {item.pending && ' • Sending...'}
         </Text>
       </View>
@@ -526,40 +742,93 @@ const checkForUpdates = async () => {
       <StatusBar style="light" />
       
       <SafeAreaView style={{ backgroundColor: 'rgba(31, 34, 35, 1)' }}>
-        <View style={[
-          styles.chatHeader,
-          { 
-            height: chatHeaderHeight,
-            paddingTop: chatHeaderPaddingTop
-          }
-        ]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={24} color="white" />
-          </TouchableOpacity>
-          
-          <Image
-            source={profileImage ? { uri: profileImage } : DEFAULT_AVATAR}
-            style={styles.chatAvatar}
-          />
-          
-          <Text style={styles.chatName}>{userName}</Text>
-          
-          {syncingMessages && (
-            <ActivityIndicator 
-              size="small" 
-              color="#f44d7b" 
-              style={styles.syncIndicator} 
-            />
+        <View style={styles.chatHeader}>
+          {isSearching ? (
+            // Search mode header
+            <>
+              <TouchableOpacity onPress={() => {
+                setIsSearching(false);
+                setSearchQuery('');
+                setSearchResults([]);
+              }} style={styles.backButton}>
+                <Ionicons name="close" size={24} color="white" />
+              </TouchableOpacity>
+              
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search messages..."
+                  placeholderTextColor="#999"
+                  value={searchQuery}
+                  onChangeText={(text) => {
+                    setSearchQuery(text);
+                    searchMessages(text);
+                  }}
+                  autoFocus
+                />
+              </View>
+              
+              {searchResults.length > 0 && (
+                <View style={styles.searchNavigation}>
+                  <Text style={styles.searchResultText}>
+                    {currentResultIndex + 1} of {searchResults.length}
+                  </Text>
+                  <TouchableOpacity onPress={goToPreviousResult} style={styles.searchNavButton}>
+                    <Ionicons name="chevron-up" size={20} color="#F44D7B" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={goToNextResult} style={styles.searchNavButton}>
+                    <Ionicons name="chevron-down" size={20} color="#F44D7B" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          ) : (
+            // Normal header
+            <>
+              <View style={styles.headerLeft}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                  <Ionicons name="chevron-back" size={24} color="white" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.headerCenter}>
+                <View style={styles.userInfoContainer}>
+                  <Image
+                    source={safeProfileUri ? { uri: safeProfileUri } : DEFAULT_AVATAR}
+                    style={styles.chatAvatar}
+                    onError={(e) => console.warn("Image failed to load:", e.nativeEvent.error)}
+                  />
+                  <Text style={styles.chatName}>{userName}</Text>
+                </View>
+              </View>
+              
+              <View style={styles.headerRight}>
+                {syncingMessages && (
+                  <ActivityIndicator 
+                    size="small" 
+                    color="#f44d7b" 
+                    style={styles.syncIndicator} 
+                  />
+                )}
+                
+                <TouchableOpacity 
+                  onPress={() => setIsSearching(true)} 
+                  style={styles.headerIconButton}
+                >
+                  <Ionicons name="search" size={22} color="#F44D7B" />
+                </TouchableOpacity>
+                
+                <UserActionMenu
+                  matchId={matchId}
+                  targetUserId={userId}
+                  userName={userName}
+                  onBlock={(data) => handleBlock(userId, data.reason, data.details)}
+                  onReport={(data) => handleReport(userId, data.reason, data.details)}
+                  onUnmatch={handleUnmatch}
+                />
+              </View>
+            </>
           )}
-          
-          <UserActionMenu
-            matchId={matchId}
-            targetUserId={userId}
-            userName={userName}
-            onBlock={(data) => handleBlock(userId, data.reason, data.details)}
-            onReport={(data) => handleReport(userId, data.reason, data.details)}
-            onUnmatch={handleUnmatch}
-          />
         </View>
       </SafeAreaView>
       
@@ -571,15 +840,20 @@ const checkForUpdates = async () => {
         <>
           <FlatList
             ref={flatListRef}
-            data={messages}
-            keyExtractor={(item, index) => `${item.timestamp}-${index}`}
-            renderItem={renderMessageItem}
+            data={groupedMessages}
+            keyExtractor={(item, index) => {
+              if ('isDateSeparator' in item && item.isDateSeparator) {
+                return `date-${item.timestamp}`;
+              }
+              return `msg-${(item as MessageType).timestamp}-${index}`;
+            }}
+            renderItem={renderItem}
             contentContainerStyle={
               messages.length === 0 
                 ? { flex: 1 } 
                 : { paddingVertical: 16, backgroundColor: '#121212' }
             }
-            style={{ backgroundColor: '#121212' }} // Add this line
+            style={{ backgroundColor: '#121212' }}
             ListEmptyComponent={renderEmptyChat}
             onContentSizeChange={() => {
               if (messages.length > 0) {
@@ -615,65 +889,113 @@ const checkForUpdates = async () => {
   );
 }
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212', // Changed from white to dark
+    backgroundColor: '#121212',
   },
+
+  // Header styles
   chatHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    height: chatHeaderHeight,
+    width: '100%',
     backgroundColor: 'rgba(31, 34, 35, 1)',
-    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android'
+      ? RNStatusBar.currentHeight
+      : chatHeaderPaddingTop,
+  },
+  headerLeft: {
+    width: 32,
+    alignItems: 'flex-start',
   },
   backButton: {
-    marginRight: 16,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  chatAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+
+  // ← This absolute block now spans the full *inner* header area
+  headerCenter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chatName: {
-    marginLeft: 12,
-    fontSize: 18,
-    fontWeight: '600',
-    color: 'white',
-    flex: 1,
+    fontFamily: 'SF-600',
+    fontSize: 20,
+    color: '#FFFFFF',
+  },
+
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  headerIconButton: {
+    marginLeft: 15,
+    padding: 8,
   },
   syncIndicator: {
+    marginRight: 6,
+  },
+
+  userInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     marginRight: 10,
   },
+
+  // Loading and empty states
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#121212', // Changed from white to dark
+    backgroundColor: '#121212',
   },
   emptyChatContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#121212', // Changed from white to dark
+    backgroundColor: '#121212',
   },
   emptyChatText: {
     fontSize: 22,
     fontWeight: '600',
-    color: '#ffffff', // Changed from dark to light for dark mode
+    color: '#ffffff',
     marginBottom: 10,
   },
   emptyChatSubtext: {
     fontSize: 16,
-    color: '#cccccc', // Changed from dark to light for dark mode
+    color: '#cccccc',
     textAlign: 'center',
   },
+
+  // Message bubbles
   messageBubble: {
     maxWidth: '80%',
     padding: 12,
     borderRadius: 20,
     marginHorizontal: 16,
     marginVertical: 4,
+    position: 'relative',
+    paddingBottom: 22, // Extra padding for the timestamp
   },
   currentUserMessage: {
     alignSelf: 'flex-end',
@@ -682,7 +1004,7 @@ const styles = StyleSheet.create({
   },
   otherUserMessage: {
     alignSelf: 'flex-start',
-    backgroundColor: '#333333', // Changed to darker color for dark mode
+    backgroundColor: '#333333',
     borderBottomLeftRadius: 4,
   },
   pendingMessage: {
@@ -691,29 +1013,50 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 16,
     color: '#fff',
+    marginBottom: 4,
   },
   messageTime: {
-    fontSize: 12,
+    fontSize: 11,
+    position: 'absolute',
+    bottom: 4,
+    right: 8,
     color: 'rgba(255, 255, 255, 0.7)',
-    alignSelf: 'flex-end',
-    marginTop: 4,
+    fontStyle: 'italic',
   },
+
+  // Date separators
+  dateSeparator: {
+    alignItems: 'center',
+    marginVertical: 12,
+    paddingHorizontal: 16,
+  },
+  dateSeparatorText: {
+    fontSize: 12,
+    color: '#999',
+    backgroundColor: 'rgba(40, 40, 40, 0.7)',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+
+  // Input area
   inputContainer: {
     flexDirection: 'row',
     padding: 12,
     borderTopWidth: 1,
-    borderTopColor: '#333333', // Changed from light to dark
-    backgroundColor: '#1a1a1a', // Changed from white to dark
+    borderTopColor: '#333333',
+    backgroundColor: '#1a1a1a',
   },
   input: {
     flex: 1,
-    backgroundColor: '#333333', // Changed from light gray to dark gray
+    backgroundColor: '#333333',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginRight: 10,
     fontSize: 16,
-    color: '#ffffff', // Changed text color to white
+    color: '#ffffff',
   },
   sendButton: {
     width: 44,
@@ -724,6 +1067,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   disabledSendButton: {
-    backgroundColor: '#444444', // Changed from light gray to dark gray
+    backgroundColor: '#444444',
+  },
+
+  // Search functionality
+  searchContainer: {
+    flex: 1,
+    backgroundColor: '#333',
+    borderRadius: 16,
+    marginHorizontal: 10,
+    paddingHorizontal: 12,
+    height: 36,
+  },
+  searchInput: {
+    color: 'white',
+    height: 36,
+    fontSize: 16,
+  },
+  searchButton: {
+    padding: 8,
+    marginHorizontal: 4,
+  },
+  searchNavigation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  searchNavButton: {
+    padding: 4,
+    marginHorizontal: 2,
+  },
+  searchResultText: {
+    color: 'white',
+    fontSize: 12,
+    marginRight: 4,
+  },
+  searchResultMessage: {
+    borderWidth: 1,
+    borderColor: 'rgba(244, 77, 123, 0.3)',
+  },
+  currentSearchResult: {
+    borderWidth: 2,
+    borderColor: 'rgba(244, 77, 123, 0.8)',
+  },
+  highlightedText: {
+    backgroundColor: 'rgba(244, 77, 123, 0.3)',
+    color: '#fff',
+    fontWeight: '700',
   },
 });

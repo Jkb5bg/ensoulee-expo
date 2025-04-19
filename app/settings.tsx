@@ -144,6 +144,7 @@ export default function SettingsScreen() {
       if (imageResponse.ok) {
         const imageUrl = await imageResponse.text();
         setProfileImage(imageUrl);
+        console.log("Jason here is the iamageUrl", imageUrl);
         return imageUrl;
       }
     } catch (error) {
