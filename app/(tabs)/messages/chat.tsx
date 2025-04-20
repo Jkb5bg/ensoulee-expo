@@ -26,6 +26,7 @@ import { SendMessage } from '@/api/SendMessage';
 import { HandleUnmatch } from '@/api/HandleUnmatch';
 import MessageType from '@/types/MessageType';
 import UserActionMenu from '@/components/UserActionMenu';
+import { useAppData } from '@/components/AppDataContext';
 import {
   getChatMessages,
   saveChatMessages,
@@ -59,6 +60,30 @@ export default function ChatScreen() {
   const userName = params.userName as string;
   const userId = params.userId as string;
   const profileImage = params.profileImage as string;
+  const [profileCacheKey, setProfileCacheKey] = useState<string>('');
+  const { profileImagesCache, loadProfileImage } = useAppData();
+
+  // Create a function to get the profile image (cached or fresh)
+  const getProfileImageUrl = useCallback(async () => {
+    if (!userId || !profileImage) return null;
+    
+    // Extract filename from URL if needed
+    let filename = profileImage;
+    if (profileImage.includes('/')) {
+      const parts = profileImage.split('/');
+      filename = parts[parts.length - 1].split('?')[0]; // Remove query params
+    }
+    
+    // Check if we have it in cache first
+    const cacheKey = `${userId}-${filename}`;
+    if (profileImagesCache[cacheKey]) {
+      return profileImagesCache[cacheKey];
+    }
+    
+    // If not in cache, load it
+    return await loadProfileImage(userId, filename);
+  }, [userId, profileImage, profileImagesCache, loadProfileImage]);
+
   const safeProfileUri = React.useMemo(() => {
     if (!profileImage) return null;
     // first encode URI components, then fix the pluses
@@ -116,6 +141,19 @@ export default function ChatScreen() {
     }
   };
 
+  const navigateToProfile = () => {
+    router.push({
+      pathname: "/profile",
+      params: {
+        matchId,
+        userId,
+        name: userName,
+        profileImage: safeProfileUri, 
+        // Add other params if available
+      }
+    });
+  };
+
   // Add navigation through search results
   const goToNextResult = () => {
     if (searchResults.length === 0) return;
@@ -151,6 +189,16 @@ export default function ChatScreen() {
     // Cleanup function
     return () => setCustomHeader(false);
   }, []);
+
+    // In a useEffect, calculate and set the cache key once when component mounts
+  useEffect(() => {
+    if (userId && profileImage) {
+      const filename = profileImage.includes('/') 
+        ? profileImage.split('/').pop()?.split('?')[0] 
+        : profileImage;
+      setProfileCacheKey(`${userId}-${filename}`);
+    }
+  }, [userId, profileImage]);
 
   useEffect(() => {
     if (safeProfileUri) {
@@ -792,14 +840,29 @@ const checkForUpdates = async () => {
               </View>
               
               <View style={styles.headerCenter}>
-                <View style={styles.userInfoContainer}>
+                <TouchableOpacity 
+                  style={styles.userInfoContainer}
+                  onPress={navigateToProfile}
+                  activeOpacity={0.7}
+                >
                   <Image
-                    source={safeProfileUri ? { uri: safeProfileUri } : DEFAULT_AVATAR}
+                    source={profileImagesCache[`${userId}-${
+                      profileImage && profileImage.includes('/') 
+                        ? profileImage.split('/').pop()?.split('?')[0] 
+                        : profileImage
+                    }`] 
+                      ? { uri: profileImagesCache[`${userId}-${
+                          profileImage && profileImage.includes('/') 
+                            ? profileImage.split('/').pop()?.split('?')[0] 
+                            : profileImage
+                        }`] } 
+                      : (safeProfileUri ? { uri: safeProfileUri } : DEFAULT_AVATAR)}
                     style={styles.chatAvatar}
+                    defaultSource={DEFAULT_AVATAR}
                     onError={(e) => console.warn("Image failed to load:", e.nativeEvent.error)}
                   />
                   <Text style={styles.chatName}>{userName}</Text>
-                </View>
+                </TouchableOpacity>
               </View>
               
               <View style={styles.headerRight}>
@@ -929,6 +992,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingTop: Platform.OS === 'ios'
+      ? (isSmallDevice ? 30 : (isLargeDevice ? 50 : 40))
+      : (isSmallDevice ? 25 : 40)
   },
   chatName: {
     fontFamily: 'SF-600',

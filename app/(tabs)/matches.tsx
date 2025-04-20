@@ -51,7 +51,21 @@ export default function MatchesScreen() {
   // Navigate to Chat Screen
   const handleMatchPress = (match: Match): void => {
     router.push({
-      pathname: "/messages",
+      pathname: "/profile",
+      params: { 
+        matchId: match.matchId,
+        userId: match.matchedUser?.id,
+        name: match.matchedUser?.name,
+        profileImage: match.matchedUser?.profileImage,
+        matchScore: match.matchScore ? match.matchScore.toString() : undefined,
+        matchRank: match.matchRank || undefined,
+      }
+    });
+  };
+
+  const handleMatchLongPress = (match: Match): void => {
+    router.push({
+      pathname: "/messages/chat",
       params: { 
         matchId: match.matchId,
         name: match.matchedUser?.name || "Unknown",
@@ -247,10 +261,12 @@ export default function MatchesScreen() {
   // Render a single match item
   const renderMatchItem = ({ item }: { item: Match }): JSX.Element => (
     <TouchableOpacity
-      key={item.matchId}
-      onPress={() => handleMatchPress(item)}
-      style={styles.matchCard}
-    >
+    key={item.matchId}
+    onPress={() => handleMatchPress(item)}
+    onLongPress={() => handleMatchLongPress(item)}
+    delayLongPress={500} // half second for long press
+    style={styles.matchCard}
+  >
       <View style={styles.cardRow}>
         {/* Profile Image */}
         <View style={styles.imageContainer}>
