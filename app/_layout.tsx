@@ -9,6 +9,7 @@ import { AppProvider } from '@/components/TabsContext';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
+import NotificationRegistration from '@/components/NotificationRegistration';
 
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -146,6 +147,8 @@ export default function RootLayout() {
             <LoadingProvider>
                 <AuthProvider>
                     <AppProvider>
+                    {expoPushToken ? <NotificationRegistration expoPushToken={expoPushToken} /> : null}
+
                         <StatusBar hidden={false} translucent style="light" />
                         {/* Define Stack navigation for the entire app */}
                         <Stack 
