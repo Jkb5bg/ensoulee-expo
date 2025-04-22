@@ -53,6 +53,10 @@ const chatHeaderHeight = Platform.OS === 'ios'
   : (isSmallDevice ? 80 : 100);
   
 
+// TODO: Fix the time stamp CSS. 
+// TODO: Fix so that messages save locally and aren't overwritten by the backend incoming.
+// TODO: Fix up the backend so messages get archived.
+
 export default function ChatScreen() {
   // Get route params
   const params = useLocalSearchParams();
@@ -604,7 +608,7 @@ const checkForUpdates = async () => {
                 latestTimestamp
               );
               
-              if (hasUpdates == true) {
+              if (hasUpdates) {
                 console.log('New messages available, fetching updates');
                 fetchMessages(latestTimestamp);
               } else {

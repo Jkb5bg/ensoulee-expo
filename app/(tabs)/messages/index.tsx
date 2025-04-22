@@ -27,6 +27,8 @@ const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 
 const { width } = Dimensions.get('window');
 
+// TODO: Fix up the message preview so it updates automatically, possibly with a new message indicator.
+
 export default function Messages() {
   const { user, userInfo, authTokens } = useAuth();
   const [matches, setMatches] = useState<MatchType[]>([]);

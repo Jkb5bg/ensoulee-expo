@@ -19,6 +19,7 @@ const setupDatabase = async (db: SQLiteDatabase) => {
   }
 };
 
+
 export default function MessagesLayout() {
   return (
     <SQLiteProvider databaseName="ensoulee_chats.db" onInit={setupDatabase}>

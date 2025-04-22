@@ -2,10 +2,12 @@ import React, { createContext, useContext, useState, useMemo, useEffect, ReactNo
 import * as WebBrowser from 'expo-web-browser'; 
 import { useAuthRequest, exchangeCodeAsync, revokeAsync, ResponseType, refreshAsync } from 'expo-auth-session'
 import { TokenResponse } from 'expo-auth-session/build/TokenRequest'
-import { Alert } from 'react-native';
+import { Alert, AppState, AppStateStatus } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import { jwtDecode } from 'jwt-decode';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
 import { GetUserSelfAPI } from '@/api/GetUserSelfAPI';
 import { GetUserProfileImage } from '@/api/GetUserProfileImage';
 import DecodedTokenInfo from '@/types/decodedTokenInfo';
@@ -19,7 +21,7 @@ import OnboardingTrackingType from '@/types/onboardingTrackingType';
 
 WebBrowser.maybeCompleteAuthSession();
 
-// AWS COGNITO configuration environment variables
+// Define constants
 const clientId: string = process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID ?? '';
 const userPoolUri: string = process.env.EXPO_PUBLIC_USER_POOL_ID ?? '';
 const redirectUri = AuthSession.makeRedirectUri();
@@ -28,6 +30,8 @@ const USER_INFO_KEY: string = 'user_info';
 const USER_DATA_KEY: string = 'user_data';
 const AUTH_STATE_KEY: string = 'auth_state';
 const USER_PROFILE_IMAGE_KEY = 'user_profile_image'; 
+const TOKEN_REFRESH_TIME_KEY = 'token_refresh_time';
+const BACKGROUND_REFRESH_TASK = 'background-token-refresh';
 const ONBOARDING: OnboardingTrackingType = {
   demographics: false,
   profileSetup: false,
@@ -37,9 +41,81 @@ const ONBOARDING: OnboardingTrackingType = {
   overall: false
 };
 
+// Define refresh buffer time (refresh token 10 minutes before expiration)
+// const REFRESH_BUFFER_TIME = 10 * 60; // 10 minutes in seconds
+const REFRESH_BUFFER_TIME = 86400 - (2 * 60); // 1 day minus 2 minutes
 
-// Define refresh buffer time (refresh token 5 minutes before expiration)
-const REFRESH_BUFFER_TIME = 5 * 60; // 5 minutes in seconds
+
+// Register background task
+TaskManager.defineTask(BACKGROUND_REFRESH_TASK, async () => {
+  try {
+    console.log('[BackgroundFetch] Running token refresh task');
+    const tokensString = await SecureStore.getItemAsync(AUTH_TOKENS_KEY);
+    
+    if (!tokensString) {
+      console.log('[BackgroundFetch] No tokens found');
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+    
+    const tokens = JSON.parse(tokensString);
+    const parsedTokens = {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      idToken: tokens.idToken,
+      issuedAt: tokens.issuedAt,
+      expiresIn: tokens.expiresIn,
+    } as TokenResponse;
+    
+    // Check if token is expired or expiring soon
+    const expirationTime = tokens.issuedAt + tokens.expiresIn;
+    const currentTime = Date.now() / 1000;
+    const shouldRefresh = currentTime > expirationTime - REFRESH_BUFFER_TIME;
+    
+    if (shouldRefresh && tokens.refreshToken) {
+      console.log('[BackgroundFetch] Refreshing token');
+      const discoveryDocument = {
+        authorizationEndpoint: userPoolUri + '/oauth2/authorize',
+        tokenEndpoint: userPoolUri + '/oauth2/token',
+        revocationEndpoint: userPoolUri + '/oauth2/revoke',
+      };
+      
+      const refreshedTokens = await refreshAsync(
+        {
+          clientId,
+          refreshToken: tokens.refreshToken,
+        },
+        discoveryDocument
+      );
+
+      const expiresIn = refreshedTokens.expiresIn ?? tokens.expiresIn;
+
+      
+      // Save refreshed tokens
+      const minimalTokenData = {
+        accessToken: refreshedTokens.accessToken,
+        idToken: refreshedTokens.idToken,
+        refreshToken: refreshedTokens.refreshToken,
+        issuedAt: refreshedTokens.issuedAt,
+        expiresIn: refreshedTokens.expiresIn,
+      };
+      
+      await SecureStore.setItemAsync(AUTH_TOKENS_KEY, JSON.stringify(minimalTokenData));
+      
+      // Update next refresh time
+      const nextRefreshTime = (refreshedTokens.issuedAt + expiresIn - REFRESH_BUFFER_TIME) * 1000;
+      await SecureStore.setItemAsync(TOKEN_REFRESH_TIME_KEY, nextRefreshTime.toString());
+      
+      console.log('[BackgroundFetch] Token refreshed successfully');
+      return BackgroundFetch.BackgroundFetchResult.NewData;
+    }
+    
+    console.log('[BackgroundFetch] Token doesn\'t need refreshing yet');
+    return BackgroundFetch.BackgroundFetchResult.NoData;
+  } catch (error) {
+    console.error('[BackgroundFetch] Error refreshing token:', error);
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
+});
 
 // Create the context with a default value
 const AuthContext = createContext<ExtendedAuthContextType | undefined>(undefined);
@@ -55,6 +131,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [userInfo, setUserInfo] = useState<DecodedTokenInfo | null>(null);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const { showLoading, hideLoading } = useLoading();
   const [user, setUser] = useState<User | null>(null); 
   const [userProfileImage, setUserProfileImage] = useState<string | null>(null);
@@ -66,7 +143,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // Ref to track if user data is properly fetched
   const fetchingUserDataRef = useRef<boolean>(false);
 
-
+  // Discovery document
   const discoveryDocument = useMemo(() => ({
     authorizationEndpoint: userPoolUri + '/oauth2/authorize',
     tokenEndpoint: userPoolUri + '/oauth2/token',
@@ -83,9 +160,44 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     discoveryDocument
   );
 
+  // Register background fetch task
+  const registerBackgroundFetch = async () => {
+    try {
+      await BackgroundFetch.registerTaskAsync(BACKGROUND_REFRESH_TASK, {
+        minimumInterval: 15 * 60, // 15 minutes
+        stopOnTerminate: false,
+        startOnBoot: true,
+      });
+      console.log('Background fetch task registered');
+    } catch (error) {
+      console.error('Error registering background fetch:', error);
+    }
+  };
+
+  // Unregister background fetch task
+  const unregisterBackgroundFetch = async () => {
+    try {
+      await BackgroundFetch.unregisterTaskAsync(BACKGROUND_REFRESH_TASK);
+      console.log('Background fetch task unregistered');
+    } catch (error) {
+      console.error('Error unregistering background fetch:', error);
+    }
+  };
+
+  // Function to check if token is expired or will expire soon
+  const isTokenExpiredOrExpiringSoon = (tokens: TokenResponse): boolean => {
+    if (!tokens?.issuedAt || !tokens?.expiresIn) return true;
+    
+    const expirationTime = tokens.issuedAt + tokens.expiresIn;
+    const currentTime = Date.now() / 1000;
+    
+    // Return true if token is expired or will expire within buffer time
+    return currentTime > expirationTime - REFRESH_BUFFER_TIME;
+  };
+  
   // Function to fetch and update user data from API
   const fetchUserData = async (tokenInfo: DecodedTokenInfo, accessToken: string): Promise<void> => {
-      // Prevent concurrent calls
+    // Prevent concurrent calls
     if (fetchingUserDataRef.current) {
       console.log("Skipping duplicate fetchUserData call - already in progress");
       return;
@@ -117,7 +229,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-      // Function to refresh user data (can be called from components)
+  // Function to refresh user data (can be called from components)
   const refreshUserData = async (): Promise<void> => {
     if (!userInfo || !authTokens?.accessToken) return;
     
@@ -163,36 +275,87 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  // Check if token is expired or will expire soon
-  const isTokenExpiredOrExpiringSoon = (tokens: TokenResponse): boolean => {
-    if (!tokens?.issuedAt || !tokens?.expiresIn) return true;
-    
-    const expirationTime = tokens.issuedAt + tokens.expiresIn;
-    const currentTime = Date.now() / 1000;
-    
-    // Return true if token is expired or will expire within buffer time
-    return currentTime > expirationTime - REFRESH_BUFFER_TIME;
-  };
-
   // Function to refresh the token
   const refreshToken = async (): Promise<boolean> => {
-    if (!authTokens?.refreshToken) return false;
+    // Try to get refresh token from state first
+    let refreshTokenToUse = authTokens?.refreshToken;
+    
+    // If no refresh token in memory, try to get it from SecureStore
+    if (!refreshTokenToUse) {
+      console.log('No refresh token in memory, checking SecureStore');
+      try {
+        const tokensString = await SecureStore.getItemAsync(AUTH_TOKENS_KEY);
+        if (tokensString) {
+          const storedTokens = JSON.parse(tokensString);
+          if (storedTokens.refreshToken) {
+            console.log('Found refresh token in SecureStore');
+            refreshTokenToUse = storedTokens.refreshToken;
+          }
+        }
+      } catch (error) {
+        console.error('Error reading tokens from SecureStore:', error);
+      }
+    }
+    
+    // If still no refresh token, we can't refresh
+    if (!refreshTokenToUse) {
+      console.log('Cannot refresh: No refresh token available in memory or storage');
+      return false;
+    }
 
+    console.log('Refreshing token...', {
+      tokenIdShort: authTokens?.idToken ? authTokens.idToken.substring(0, 10) + '...' : 'none',
+      tokenIssuedAt: authTokens?.issuedAt,
+      tokenExpiresIn: authTokens?.expiresIn,
+      refreshTokenShort: refreshTokenToUse.substring(0, 10) + '...'
+    });
+    
     try {
       const refreshedTokens = await refreshAsync(
         {
           clientId,
-          refreshToken: authTokens.refreshToken,
+          refreshToken: refreshTokenToUse,
         },
         discoveryDocument
       );
 
+      console.log('Token refresh response:', {
+        success: !!refreshedTokens.accessToken,
+        newTokenIdShort: refreshedTokens.idToken ? refreshedTokens.idToken.substring(0, 10) + '...' : 'none',
+        newTokenIssuedAt: refreshedTokens.issuedAt,
+        newTokenExpiresIn: refreshedTokens.expiresIn
+      });
+      
+      // Make sure to preserve the refresh token if it's not returned in the response
+      if (!refreshedTokens.refreshToken && refreshTokenToUse) {
+        console.log('Preserving existing refresh token as it was not returned in the response');
+        refreshedTokens.refreshToken = refreshTokenToUse;
+      }
+      
       await saveAndSetAuthTokens(refreshedTokens);
+      
+      // Update the next refresh time in SecureStore
+      const nextRefreshTime = ((refreshedTokens.issuedAt ?? 0) + ((refreshedTokens.expiresIn ?? authTokens?.expiresIn) ?? 0) - REFRESH_BUFFER_TIME) * 1000;
+      await SecureStore.setItemAsync(TOKEN_REFRESH_TIME_KEY, nextRefreshTime.toString());
+      
       return true;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to refresh token:', error);
-      // If refresh fails, clear tokens and force re-login
-      await saveAndSetAuthTokens(null);
+      console.log('Error details:', error instanceof Error ? JSON.stringify(error) : String(error));
+      
+      // We don't want to clear tokens on every error - only on specific auth errors
+      // This keeps the user logged in during temporary network issues
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      if (errorMessage.includes('invalid_grant') || 
+          errorMessage.includes('unauthorized') ||
+          errorMessage.includes('expired')) {
+        console.log('Auth error detected, clearing tokens and forcing re-login');
+        await saveAndSetAuthTokens(null);
+      } else {
+        console.log('Non-auth error detected, keeping tokens for retry');
+      }
+      
       return false;
     }
   };
@@ -209,13 +372,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     const expirationTime = tokens.issuedAt + tokens.expiresIn;
     const currentTime = Date.now() / 1000;
     
-    // Calculate time until refresh (5 minutes before expiration)
+    // Calculate time until refresh (buffer time before expiration)
+
     const timeUntilRefresh = Math.max(
       0,
       (expirationTime - REFRESH_BUFFER_TIME - currentTime) * 1000
     );
 
     console.log(`Token refresh scheduled in ${timeUntilRefresh / 1000} seconds`);
+
+    // Schedule next refresh time in SecureStore for background fetch
+    const nextRefreshTime = (tokens.issuedAt + (tokens.expiresIn ?? 0) - REFRESH_BUFFER_TIME) * 1000;
+    SecureStore.setItemAsync(TOKEN_REFRESH_TIME_KEY, nextRefreshTime.toString());
 
     // Schedule refresh
     refreshTimeoutRef.current = setTimeout(() => {
@@ -259,7 +427,45 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // Alias for getIdToken for backward compatibility
   const getValidToken = getIdToken;
 
+  // Handle app state changes
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+      // Check if app is coming to foreground
+      if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('App has come to the foreground!');
+        
+        // Check if we need to refresh the token
+        if (authTokens && isTokenExpiredOrExpiringSoon(authTokens)) {
+          console.log('Token needs refreshing after app return to foreground');
+          await refreshToken();
+        }
+      }
+      
+      appStateRef.current = nextAppState;
+    };
 
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [authTokens]);
+
+  // Register or unregister background fetch based on auth state
+  useEffect(() => {
+    if (authTokens) {
+      registerBackgroundFetch();
+    } else {
+      unregisterBackgroundFetch();
+    }
+    
+    return () => {
+      // Clean up on unmount
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+    };
+  }, [authTokens]);
 
   // Load tokens and check auth state
   useEffect(() => {
@@ -338,6 +544,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             
             // If token is expiring soon but not completely expired, refresh it immediately
             if (isTokenExpiredOrExpiringSoon(parsedTokens)) {
+              console.log('Token is expiring soon, refreshing immediately');
               refreshToken();
             } else {
               // Otherwise schedule a future refresh
@@ -352,8 +559,28 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
               hideLoading();
             }
           } else {
-            // Token is completely expired, clear it
-            await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
+            // Token is completely expired, attempt to refresh once
+            console.log('Token is completely expired, attempting refresh');
+            if (tokens.refreshToken) {
+              try {
+                const refreshedTokens = await refreshAsync(
+                  {
+                    clientId,
+                    refreshToken: tokens.refreshToken,
+                  },
+                  discoveryDocument
+                );
+                
+                await saveAndSetAuthTokens(refreshedTokens);
+              } catch (error) {
+                console.error('Failed to refresh expired token:', error);
+                // Clear token if refresh fails
+                await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
+              }
+            } else {
+              // No refresh token available, clear tokens
+              await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
+            }
           }
         }
       } catch (error) {
@@ -380,13 +607,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     
     loadTokensAndState();
     loadOnboardingTracking();
-    
-    // Cleanup function to clear the timeout when component unmounts
-    return () => {
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-    };
   }, []);
 
   const decodeJWT = (token: string): DecodedTokenInfo | null => {
@@ -406,7 +626,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         gender: decoded.gender,
         birthdate: decoded.birthdate,
         cognito_username: decoded['cognito:username'] || decoded.username,
-        userName: userName, // Make sure userName is included
+        userName: userName,
         exp: decoded.exp,
       };
     } catch (error) {
@@ -442,6 +662,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         
         // Schedule token refresh
         scheduleTokenRefresh(exchangeTokenResponse);
+        
+        // Register background fetch
+        registerBackgroundFetch();
       } catch (error) {
         console.error("Token exchange failed:", error);
         // Clear auth in progress state on error
@@ -486,40 +709,41 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   }, [discoveryDocument, request, response]);
 
-  // Add this function within the AuthProvider component
-const updateOnboardingStatus = async (step: keyof OnboardingTrackingType, value: boolean): Promise<void> => {
-  try {
-    // Create new state with updated value
-    const updatedOnboarding = {
-      ...onboardingTracking,
-      [step]: value
-    };
-    
-    // If all steps except 'overall' are completed, set overall to true
-    if (
-      step !== 'overall' && 
-      updatedOnboarding.demographics && 
-      updatedOnboarding.profileSetup && 
-      updatedOnboarding.quiz && 
-      updatedOnboarding.register &&
-      updatedOnboarding.index
-    ) {
-      updatedOnboarding.overall = true;
+  // Update onboarding status
+  const updateOnboardingStatus = async (step: keyof OnboardingTrackingType, value: boolean): Promise<void> => {
+    try {
+      // Create new state with updated value
+      const updatedOnboarding = {
+        ...onboardingTracking,
+        [step]: value
+      };
+      
+      // If all steps except 'overall' are completed, set overall to true
+      if (
+        step !== 'overall' && 
+        updatedOnboarding.demographics && 
+        updatedOnboarding.profileSetup && 
+        updatedOnboarding.quiz && 
+        updatedOnboarding.register &&
+        updatedOnboarding.index
+      ) {
+        updatedOnboarding.overall = true;
+      }
+      
+      // Update state
+      setOnboardingTracking(updatedOnboarding);
+      
+      // Save to secure storage
+      await SecureStore.setItemAsync('onboardingTracking', JSON.stringify(updatedOnboarding));
+      
+      return Promise.resolve();
+    } catch (error) {
+      console.error('Error updating onboarding status:', error);
+      return Promise.reject(error);
     }
-    
-    // Update state
-    setOnboardingTracking(updatedOnboarding);
-    
-    // Save to secure storage
-    await SecureStore.setItemAsync('onboardingTracking', JSON.stringify(updatedOnboarding));
-    
-    return Promise.resolve();
-  } catch (error) {
-    console.error('Error updating onboarding status:', error);
-    return Promise.reject(error);
-  }
-};
+  };
 
+  // Improved logout function
   const logout = async () => {
     // Show loading during logout
     showLoading("Signing out...");
@@ -529,6 +753,9 @@ const updateOnboardingStatus = async (step: keyof OnboardingTrackingType, value:
       clearTimeout(refreshTimeoutRef.current);
       refreshTimeoutRef.current = null;
     }
+    
+    // Unregister background fetch
+    await unregisterBackgroundFetch();
     
     if (!authTokens?.refreshToken || !discoveryDocument || !clientId) {
       hideLoading();
@@ -584,6 +811,8 @@ const updateOnboardingStatus = async (step: keyof OnboardingTrackingType, value:
   // Save tokens and set state
   const saveAndSetAuthTokens = async (tokens: TokenResponse | null) => {
     try {
+      console.log('Saving auth tokens:', tokens ? 'has tokens' : 'null tokens');
+      
       if (tokens) {
         const minimalTokenData = {
           accessToken: tokens.accessToken,
@@ -592,13 +821,27 @@ const updateOnboardingStatus = async (step: keyof OnboardingTrackingType, value:
           issuedAt: tokens.issuedAt,
           expiresIn: tokens.expiresIn,
         };
+        
+        console.log('Token data to save:', {
+          issuedAt: tokens.issuedAt,
+          expiresIn: tokens.expiresIn,
+          hasAccessToken: !!tokens.accessToken,
+          hasIdToken: !!tokens.idToken,
+          hasRefreshToken: !!tokens.refreshToken
+        });
+        
         await SecureStore.setItemAsync(AUTH_TOKENS_KEY, JSON.stringify(minimalTokenData));
-
+  
+        // Update the next refresh time in SecureStore
+        const nextRefreshTime = (tokens.issuedAt + (tokens.expiresIn ?? 0) - REFRESH_BUFFER_TIME) * 1000;
+        await SecureStore.setItemAsync(TOKEN_REFRESH_TIME_KEY, nextRefreshTime.toString());
+        console.log('Next token refresh scheduled at:', new Date(nextRefreshTime).toLocaleString());
+  
         // Decode the JWT and store user info
         if (tokens.idToken) {
           const decodedInfo = decodeJWT(tokens.idToken);
           setUserInfo(decodedInfo);
-
+  
           // Save user info to SecureStore
           if (decodedInfo) {
             await SecureStore.setItemAsync(USER_INFO_KEY, JSON.stringify(decodedInfo));
@@ -609,6 +852,7 @@ const updateOnboardingStatus = async (step: keyof OnboardingTrackingType, value:
         await SecureStore.deleteItemAsync(USER_INFO_KEY);
         await SecureStore.deleteItemAsync(USER_DATA_KEY);
         await SecureStore.deleteItemAsync(USER_PROFILE_IMAGE_KEY);
+        await SecureStore.deleteItemAsync(TOKEN_REFRESH_TIME_KEY);
         setUserInfo(null);
         setUser(null);
         setUserProfileImage(null);
@@ -623,8 +867,7 @@ const updateOnboardingStatus = async (step: keyof OnboardingTrackingType, value:
       
       // Navigate if tokens are available
       if (tokens) {
-        console.log("Tokens saved, navigating to tabs");
-        router.replace("/(tabs)");
+        console.log("Tokens saved successfully");
       }
     } catch (error) {
       console.error('Error saving auth tokens:', error);
@@ -653,26 +896,3 @@ export const useAuth = () => {
   }
   return context;
 };
-
-// Usage example:
-// function MyApp() {
-//   return (
-//     <AuthProvider>
-//       <Navigation />
-//     </AuthProvider>
-//   );
-// }
-//
-// function MyScreen() {
-//   const { authTokens, login, logout, isAuthenticated } = useAuth();
-//   
-//   return (
-//     <View>
-//       {isAuthenticated ? (
-//         <Button title="Logout" onPress={logout} />
-//       ) : (
-//         <Button title="Login" onPress={login} />
-//       )}
-//     </View>
-//   );
-// }

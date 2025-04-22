@@ -24,6 +24,8 @@ const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 const { width, height } = Dimensions.get('window');
 const isSmallDevice = height < 700;
 
+// TODO: Fix, maybe needs a new function on the backend.
+
 export default function ProfileScreen() {
   // Get route parameters
   const params = useLocalSearchParams();
