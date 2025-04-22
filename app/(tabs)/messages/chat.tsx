@@ -56,6 +56,7 @@ const chatHeaderHeight = Platform.OS === 'ios'
 // TODO: Fix the time stamp CSS. 
 // TODO: Fix so that messages save locally and aren't overwritten by the backend incoming.
 // TODO: Fix up the backend so messages get archived.
+// TODO: Implement handling for reporting, blocking, and unmatching.
 
 export default function ChatScreen() {
   // Get route params
