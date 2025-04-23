@@ -25,6 +25,7 @@ WebBrowser.maybeCompleteAuthSession();
 const clientId: string = process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID ?? '';
 const userPoolUri: string = process.env.EXPO_PUBLIC_USER_POOL_ID ?? '';
 const redirectUri = AuthSession.makeRedirectUri();
+console.log('Redirect URI:', redirectUri);
 const AUTH_TOKENS_KEY: string = 'auth_tokens';
 const USER_INFO_KEY: string = 'user_info';
 const USER_DATA_KEY: string = 'user_data';
@@ -43,7 +44,7 @@ const ONBOARDING: OnboardingTrackingType = {
 
 // Define refresh buffer time (refresh token 10 minutes before expiration)
 // const REFRESH_BUFFER_TIME = 10 * 60; // 10 minutes in seconds
-const REFRESH_BUFFER_TIME = 86400 - (2 * 60); // 1 day minus 2 minutes
+const REFRESH_BUFFER_TIME = 86400 - (60 * 60 * 12); // 12 hours
 
 
 // Register background task
