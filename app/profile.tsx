@@ -1,4 +1,5 @@
-// app/profile.tsx
+// app/profile.tsx - Enhanced version
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -20,7 +21,6 @@ import { useAuth } from '@/components/AuthContext';
 import { useAppData } from '@/components/AppDataContext';
 import calculateAge from '@/functions/calculateAge';
 import { LinearGradient } from 'expo-linear-gradient';
-import { GetUserProfileImages } from '@/api/GetUserProfileImages';
 import { GetUserProfile } from '@/api/GetUserProfile';
 import User from '@/types/user';
 
@@ -28,335 +28,244 @@ const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 const { width, height } = Dimensions.get('window');
 const isSmallDevice = height < 700;
 
+interface NameDisplayProps {
+  profileData: {
+    firstName?: string;
+    birthDate?: string;
+    city?: string;
+    state?: string;
+  } | null;
+  name: string;
+}
+
+
+// Name display component for handling conditional age display
+const NameDisplay: React.FC<NameDisplayProps> = ({ profileData, name }) => {
+  const hasAge = profileData?.birthDate && profileData.birthDate.trim() !== "";
+  
+  return (
+    <View style={styles.nameContainer}>
+      <Text style={styles.nameText}>
+        {profileData?.firstName || name || 'Unknown'}
+        {hasAge && `, ${calculateAge(profileData.birthDate!)}`}
+      </Text>
+      {(profileData?.city || profileData?.state) && (
+        <View style={styles.locationWrapper}>
+          <Ionicons name="location-outline" size={16} color="rgba(255, 255, 255, 0.9)" />
+          <Text style={styles.locationText}>
+            {[profileData.city, profileData.state].filter(Boolean).join(', ')}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+};
+
 export default function ProfileScreen() {
   // Get route parameters
   const params = useLocalSearchParams();
   const userId = params.userId as string;
   const matchId = params.matchId as string;
-  const didLoadImages = useRef(false);
+  const name = params.name as string;
+  const profileImage = params.profileImage as string;
+  const matchRank = params.matchRank as string;
+  const matchScore = params.matchScore ? parseFloat(params.matchScore as string) : undefined;
   
-  // Debug params
   console.log('Profile screen params:', params);
   
   // State for profile data
-  const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [profileImages, setProfileImages] = useState<string[]>([]);
-  const [imageLoading, setImageLoading] = useState(false);
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
-  
-  // Prevent infinite update loops
-  const isInitialMount = useRef(true);
-  const apiCallInProgress = useRef(false);
+  const [profileData, setProfileData] = useState<any>(null);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   
   // Get auth context
-  const { authTokens, userInfo, getValidToken, user } = useAuth();
-  const { potentialMatches, matches } = useAppData();
+  const { authTokens, userInfo, getValidToken } = useAuth();
   
-  // Debug auth context
-  console.log('Auth context loaded:', {
-    hasAuthTokens: !!authTokens,
-    hasUserInfo: !!userInfo,
-    hasGetValidToken: !!getValidToken,
-    hasUser: !!user
-  });
-  
-  // Find the user profile from potentialMatches or matches
-  const findUserProfile = useCallback(() => {
-    // Debug logging
-    console.log('Potential matches:', potentialMatches?.length);
-    console.log('Matches:', matches?.length);
-    console.log('Looking for userId:', userId);
+  // Extract just the filename from the profileImage
+  const getImageFilename = useCallback(() => {
+    if (!profileImage) return null;
     
-    // First check potential matches (from discover screen)
-    const potentialMatch = potentialMatches.find(match => match.userName === userId);
-    if (potentialMatch) {
-      console.log('Found user in potentialMatches:', potentialMatch);
-      return potentialMatch;
+    console.log("Original profile image:", profileImage);
+    
+    // If the profileImage doesn't contain slashes or special characters,
+    // it's likely already just the filename (UUID)
+    if (!profileImage.includes('/') && !profileImage.includes('?') && 
+        !profileImage.includes('&') && !profileImage.includes('=')) {
+      return profileImage;
     }
     
-    // Then check matches (from matches screen)
-    const match = matches.find(match => 
-      match.matchedUser && match.matchedUser.id === userId
-    );
+    // Based on the backend implementation, we expect profileImage to be just
+    // a UUID or simple filename, not a full URL. However, if we're getting
+    // a full URL or presigned URL, we need to extract just the filename.
     
-    if (match) {
-      console.log('Found user in matches with images:', match.matchedUser.profileImage);
-      // Create a more complete profile object
-      return {
-        userName: match.matchedUser.id,
-        firstName: match.matchedUser.name,
-        // Add both imageFilenames and presignedImageUrls for maximum compatibility
-        imageFilenames: match.matchedUser.profileImage ? [match.matchedUser.profileImage] : [],
-        presignedImageUrls: match.matchedUser.profileImage ? [match.matchedUser.profileImage] : [],
-        birthDate: params.birthDate || '2000-01-01',
-        city: params.city || 'City',
-        state: params.state || 'State',
-        bio: params.bio || 'No bio available',
-        occupation: params.occupation || 'Occupation',
-        matchScore: match.matchScore,
-        matchRank: match.matchRank,
-      };
-    }
-    
-    // If not found in either, return null
-    console.log('User not found in matches or potentialMatches');
-    return null;
-  }, [userId, potentialMatches, matches, params]);
-  
-  // Load profile images
-  const loadProfileImages = useCallback(async () => {
-    if (!userInfo || !userId) {
-      console.log('Missing required data for loading images');
+    try {
+      let filename;
+      
+      if (profileImage.includes('amazonaws.com')) {
+        // This appears to be an S3 URL - extract just the filename
+        // The S3 object key format is userId/filename
+        // Get everything after the last slash before any query parameters
+        const urlPath = profileImage.split('?')[0]; // Remove query parameters
+        const pathParts = urlPath.split('/');
+        filename = pathParts[pathParts.length - 1]; // Last part is the filename
+      } else if (profileImage.includes('/')) {
+        // Some other URL format - extract just the filename
+        const urlPath = profileImage.split('?')[0]; // Remove query parameters
+        const pathParts = urlPath.split('/');
+        filename = pathParts[pathParts.length - 1]; // Get the last part
+      } else {
+        // If we're here, it might be a strange format - try to clean it up
+        // Remove any query parameters
+        filename = profileImage.split('?')[0];
+      }
+      
+      console.log("Extracted filename:", filename);
+      return filename || null;
+    } catch (error) {
+      console.error("Error extracting filename:", error);
       return null;
+    }
+  }, [profileImage]);
+  
+  // Load the user profile data
+  const loadUserProfile = useCallback(async () => {
+    if (!userInfo || !authTokens?.idToken || !userId) {
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      // Get a valid token
+      const token = await getValidToken();
+      if (!token) {
+        throw new Error('Could not get valid token');
+      }
+      
+      // Get the user profile
+      const userData = await GetUserProfile(userInfo, token, userId);
+      if (userData) {
+        console.log("User profile loaded:", {
+          name: userData.firstName,
+          birthDate: userData.birthDate,
+          city: userData.city,
+          state: userData.state,
+          bio: userData.bio,
+          imageFilenames: userData.imageFilenames?.length
+        });
+        
+        setProfileData(userData);
+      }
+    } catch (error) {
+      console.error("Error loading user profile:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, authTokens, userInfo, getValidToken]);
+  
+  // Load the profile image
+  const loadProfileImage = useCallback(async () => {
+    if (!userInfo || !authTokens?.idToken || !userId) {
+      setImageLoading(false);
+      return;
     }
     
     try {
       setImageLoading(true);
       
-      // Get a valid token - this will automatically refresh if needed
-      const token = await getValidToken();
-      if (!token) {
-        throw new Error('Failed to get a valid token');
-      }
-      
-      console.log('Got valid token for image loading');
-      
-      // Check if we have image filenames to load
-      const imageFilenames = profileData?.imageFilenames || 
-                            (profileData?.presignedImageUrls ? 
-                              profileData.presignedImageUrls.map((url: string) => {
-                                // Extract filename from URL if it's a URL
-                                if (url && url.startsWith('http')) {
-                                  const urlParts = url.split('/');
-                                  return urlParts[urlParts.length - 1];
-                                }
-                                return url;
-                              }) : 
-                              []) || 
-                            (params.profileImage ? [params.profileImage as string] : []);
-      
-      if (!imageFilenames || imageFilenames.length === 0) {
-        console.log('No image filenames available');
+      // Get the filename
+      const filename = getImageFilename();
+      if (!filename) {
+        console.log("No valid filename could be extracted");
         setImageLoading(false);
         return;
       }
       
-      console.log('Image filenames to load:', imageFilenames);
+      console.log("Loading image with filename:", filename);
       
-      // Create complete user data for image API with all required fields
-      const userData: User = {
-        userName: userId,
-        imageFilenames: imageFilenames,
-        tier: profileData?.tier || 'FREE',
-        occupation: profileData?.occupation || '',
-        state: profileData?.state || '',
-        city: profileData?.city || '',
-        bio: profileData?.bio || '',
-        matchSex: profileData?.matchSex || '',
-        apiKey: profileData?.apiKey || userInfo.apiKey || '',
-        birthDate: profileData?.birthDate || '',
-        createdAt: profileData?.createdAt || new Date().toISOString(),
-        email: profileData?.email || '',
-        firstName: profileData?.firstName || params.name as string || 'User',
-        privateProfile: profileData?.privateProfile || false,
-        sex: profileData?.sex || '',
-        firstLogin: profileData?.firstLogin || false
-      };
-      
-      // Call multi-image API
-      const imageUrls = await GetUserProfileImages(userInfo, token, userData);
-      if (imageUrls && imageUrls.length > 0) {
-        console.log(`Got ${imageUrls.length} profile image URLs`);
-        
-        // Clean URLs by removing token parameters
-        const cleanUrls = imageUrls.map(url => {
-          if (url.includes('s3.amazonaws.com') && url.includes('X-Amz-Security-Token')) {
-            console.log('Cleaning S3 URL by removing token parameters');
-            return url.split('?')[0];
-          }
-          return url;
-        });
-        
-        setProfileImages(cleanUrls);
-      } else {
-        console.log('No profile images returned from API');
-        
-        // As a fallback, try to use presigned URLs directly if available
-        if (profileData?.presignedImageUrls && profileData.presignedImageUrls.length > 0) {
-          console.log('Using presigned URLs directly as fallback');
-          // Clean URLs by removing token parameters
-          const cleanUrls = profileData.presignedImageUrls.map((url: string) => {
-            if (url && url.includes('s3.amazonaws.com') && url.includes('X-Amz-Security-Token')) {
-              return url.split('?')[0];
-            }
-            return url;
-          });
-          setProfileImages(cleanUrls);
-        }
+      // Get a valid token
+      const token = await getValidToken();
+      if (!token) {
+        throw new Error('Could not get valid token');
       }
-    } catch (error) {
-      console.error('Error loading profile images:', error);
       
-      // If we have a token error, try to get user profile directly as fallback
-      if (String(error).includes('InvalidToken') || String(error).includes('token')) {
-        console.log('Token error detected in image loading, trying profile lookup as fallback');
+      // Construct the API URL
+      const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_ENSOULEE_API_URL;
+      if (!BACKEND_URL) {
+        throw new Error('Backend URL not configured');
+      }
+      
+      // Normalize the base URL - remove trailing slash if present
+      let baseUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+      
+      // Remove duplicate dev paths if present (issue from logs)
+      if (baseUrl.includes('/dev/dev')) {
+        baseUrl = baseUrl.replace('/dev/dev', '/dev');
+      }
+      
+      // Create the correct image API path
+      // Based on the backend controller, the path should be:
+      // /dev/api/images/{userId}/{imageFilename}
+      const imageEndpoint = `${baseUrl}/api/images/${encodeURIComponent(userId)}/${encodeURIComponent(filename)}`;
+      console.log("Image API endpoint:", imageEndpoint);
+      
+      // Make the request to get the presigned URL
+      const response = await fetch(imageEndpoint, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'x-api-key': userInfo.apiKey || ''
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`Image API error: ${response.status}`);
+        let errorText = '';
         try {
-          // Use the imported GetUserProfile
-          const token = await getValidToken();
-          
-          if (token && userId) {
-            const profileResponse = await GetUserProfile(userInfo, token, userId);
-            console.log('GetUserProfile fallback response:', profileResponse);
-            
-            if (profileResponse && profileResponse.imageFilenames && profileResponse.imageFilenames.length > 0) {
-              // Try direct S3 URLs as last resort
-              const directUrls = profileResponse.imageFilenames.map((filename: string) => 
-                `https://ensoulee-user-images.s3.amazonaws.com/${userId}/${filename}`
-              );
-              
-              setProfileImages(directUrls);
-              
-              // Also update profile data if we have it
-              if (!profileData) {
-                setProfileData(profileResponse);
-              }
-            }
-          }
-        } catch (fallbackError) {
-          console.error('Fallback attempt also failed:', fallbackError);
+          errorText = await response.text();
+        } catch (e) {
+          errorText = 'Could not read error message';
         }
+        console.error(`Error response: ${errorText}`);
+        throw new Error(`Failed to get image: ${response.status}`);
       }
+      
+      // Get the presigned URL from the response
+      const presignedUrl = await response.text();
+      console.log(`Got presigned URL (length: ${presignedUrl.length})`);
+      
+      // Make sure we got a valid URL
+      if (!presignedUrl || !presignedUrl.startsWith('http')) {
+        console.error('Invalid presigned URL received:', presignedUrl.substring(0, 100) + '...');
+        throw new Error('Invalid presigned URL received');
+      }
+      
+      // Set the image URL for display
+      setImageUrl(presignedUrl);
+    } catch (error) {
+      console.error('Error loading profile image:', error);
     } finally {
       setImageLoading(false);
     }
-  }, [userInfo, userId, getValidToken, profileData, params]);
+  }, [userId, getImageFilename, authTokens, userInfo, getValidToken]);
   
-  // Load profile data
-  const loadProfileData = useCallback(async () => {
-    // Skip if already loading
-    if (apiCallInProgress.current) {
-      console.log('API call already in progress, skipping duplicate call');
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      apiCallInProgress.current = true;
-      
-      // Try to find user in potentialMatches or matches
-      const userProfile = findUserProfile();
-      
-      if (userProfile) {
-        console.log('Found user profile in cached data');
-        setProfileData(userProfile);
-      } else {
-        // If current user is viewing their own profile
-        if (!userId || userId === userInfo?.userName) {
-          console.log('Loading current user profile');
-          setProfileData(user);
-        } else {
-          // Try to get profile directly from API
-          try {
-            console.log('Trying to get profile directly from API');
-            const token = await getValidToken();
-            if (token) {
-              if (userInfo) {
-              const userProfileFromApi = await GetUserProfile(userInfo, token, userId);
-                if (userProfileFromApi) {
-                  console.log('Successfully fetched profile from API');
-                  setProfileData(userProfileFromApi);
-                  return;
-                }
-              }
-            }
-          } catch (apiError) {
-            console.error('Error fetching from API, falling back to params:', apiError);
-          }
-          
-          // Fallback to params data with improved image handling
-          console.log('Using fallback profile data from params');
-          const profileImage = params.profileImage as string;
-          
-          const fallbackProfile = {
-            userName: userId,
-            firstName: params.name || 'Unknown User',
-            birthDate: params.birthDate || '2000-01-01', // Default to something
-            city: params.city || 'City',
-            state: params.state || 'State',
-            bio: params.bio || 'No bio available',
-            occupation: params.occupation || 'Occupation',
-            matchScore: params.matchScore ? parseFloat(params.matchScore as string) : 0.5,
-            matchRank: params.matchRank as string || 'GOLD',
-            // Add both for maximum compatibility
-            presignedImageUrls: profileImage ? [profileImage] : [],
-            imageFilenames: profileImage ? [profileImage] : [],
-          };
-          
-          console.log('Created fallback profile with data:', fallbackProfile);
-          setProfileData(fallbackProfile);
-        }
-      }
-    } catch (error: any) {
-      console.error('Error loading profile data:', error);
-      setError(error.message || 'Failed to load profile data');
-    } finally {
-      setLoading(false);
-      apiCallInProgress.current = false;
-    }
-  }, [userId, userInfo, findUserProfile, user, getValidToken, params]);
-  
-  // Initial setup on mount - load data and images once
+  // Load data on component mount
   useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      loadProfileData();
-    }
-  }, [loadProfileData]);
+    Promise.all([
+      loadUserProfile(),
+      loadProfileImage()
+    ]);
+  }, [loadUserProfile, loadProfileImage]);
   
-  // Load profile images when profile data is available
-  useEffect(() => {
-    if (!profileData || didLoadImages.current) {
-      return;
-    }
-    didLoadImages.current = true;
-    loadProfileImages();
-  }, [profileData, loadProfileImages]);
-  
-  // Handle back button press
+  // Handle back button
   const handleBack = () => {
     router.back();
   };
   
-  // Get profile image source for current image
-  const getProfileImageSource = () => {
-    if (profileImages.length > 0) {
-      return { uri: profileImages[activeImageIndex] };
-    }
-    if (params.profileImage) {
-      return { uri: params.profileImage as string };
-    }
-    return DEFAULT_AVATAR;
-  };
-  
-  // Handle image navigation
-  const handlePreviousImage = () => {
-    if (profileImages.length > 1) {
-      setActiveImageIndex((prev) => (prev === 0 ? profileImages.length - 1 : prev - 1));
-    }
-  };
-  
-  const handleNextImage = () => {
-    if (profileImages.length > 1) {
-      setActiveImageIndex((prev) => (prev === profileImages.length - 1 ? 0 : prev + 1));
-    }
-  };
-  
-  // Message button handler
+  // Handle message button
   const handleMessage = () => {
-    if (!profileData) {
-      Alert.alert('Error', 'Cannot message this user. Profile data is missing.');
+    if (!name || !userId) {
+      Alert.alert('Error', 'Cannot message this user. Missing user information.');
       return;
     }
     
@@ -364,70 +273,27 @@ export default function ProfileScreen() {
       pathname: "/messages/chat",
       params: {
         matchId,
-        userId: profileData.userName,
-        userName: profileData.firstName,
-        profileImage: profileImages[0] || params.profileImage
+        userId: userId,
+        userName: name,
+        profileImage: profileImage || ''
       }
     });
   };
-  
-  // Rendering indicator dots for image carousel
-  const renderImageDots = () => {
-    if (profileImages.length <= 1) return null;
-    
-    return (
-      <View style={styles.imageDots}>
-        {profileImages.map((_, index) => (
-          <View 
-            key={`dot-${index}`} 
-            style={[
-              styles.imageDot, 
-              index === activeImageIndex && styles.activeImageDot
-            ]} 
-          />
-        ))}
-      </View>
-    );
-  };
-  
-  // Log final profile data before rendering
-  console.log('Final profileData being rendered:', profileData);
   
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar style="light" />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack} style={styles.backButtonContainer}>
+            <Ionicons name="chevron-back" size={24} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <View style={styles.headerRightPlaceholder} />
+        </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#f44d7b" />
           <Text style={styles.loadingText}>Loading profile...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-  
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar style="light" />
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Text style={styles.backButtonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-  
-  if (!profileData) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar style="light" />
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>No profile data available</Text>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Text style={styles.backButtonText}>Go Back</Text>
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -449,7 +315,7 @@ export default function ProfileScreen() {
       </SafeAreaView>
       
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.contentContainer}>
-        {/* Profile Header with Image Carousel */}
+        {/* Profile Header with Image */}
         <View style={styles.profileHeader}>
           <View style={styles.profileImageContainer}>
             {imageLoading ? (
@@ -459,73 +325,44 @@ export default function ProfileScreen() {
             ) : (
               <>
                 <Image
-                  source={getProfileImageSource()}
+                  source={imageUrl ? { uri: imageUrl } : DEFAULT_AVATAR}
                   style={styles.profileImage}
                   defaultSource={DEFAULT_AVATAR}
+                  onError={(e) => console.warn('Image failed to load:', e.nativeEvent.error)}
                 />
-                
-                {/* Image navigation controls - only show if multiple images */}
-                {profileImages.length > 1 && (
-                  <>
-                    <TouchableOpacity 
-                      style={[styles.imageNavButton, styles.imageNavButtonLeft]} 
-                      onPress={handlePreviousImage}
-                    >
-                      <Ionicons name="chevron-back" size={28} color="white" />
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={[styles.imageNavButton, styles.imageNavButtonRight]} 
-                      onPress={handleNextImage}
-                    >
-                      <Ionicons name="chevron-forward" size={28} color="white" />
-                    </TouchableOpacity>
-                  </>
-                )}
-                
-                {/* Indicator dots for multi-image */}
-                {renderImageDots()}
                 
                 {/* Add gradient overlay for better text visibility */}
                 <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.7)']}
+                  colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.85)']}
                   style={styles.imageGradient}
                 />
               </>
             )}
-          </View>
-          
-          <View style={styles.nameContainer}>
-            <Text style={styles.nameText}>
-              {profileData.firstName || 'Unknown'}, {calculateAge(profileData.birthDate || '2000-01-01')}
-            </Text>
-            {(profileData.city || profileData.state) && (
-              <Text style={styles.locationText}>
-                {[profileData.city, profileData.state].filter(Boolean).join(', ')}
-              </Text>
-            )}
+            
+            {/* Use the NameDisplay component */}
+            <NameDisplay profileData={profileData} name={name} />
           </View>
           
           {/* Match Details if available */}
-          {(profileData.matchScore !== undefined || profileData.matchRank) && (
+          {(matchScore !== undefined || matchRank) && (
             <View style={styles.matchInfoContainer}>
-              {profileData.matchScore !== undefined && (
+              {matchScore !== undefined && (
                 <View style={styles.scoreContainer}>
                   <Text style={styles.scoreLabel}>Match</Text>
                   <Text style={styles.scoreValue}>
-                    {Math.round(profileData.matchScore * 100)}%
+                    {Math.round(matchScore * 100)}%
                   </Text>
                 </View>
               )}
               
-              {profileData.matchRank && (
+              {matchRank && (
                 <View style={styles.rankContainer}>
                   <Text style={styles.rankLabel}>Rank</Text>
                   <Text style={[
                     styles.rankValue,
-                    { color: getMatchRankColor(profileData.matchRank) }
+                    { color: getMatchRankColor(matchRank) }
                   ]}>
-                    {profileData.matchRank}
+                    {matchRank}
                   </Text>
                 </View>
               )}
@@ -534,40 +371,44 @@ export default function ProfileScreen() {
         </View>
         
         {/* Bio Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>About</Text>
-          <Text style={styles.bioText}>{profileData.bio || 'No bio available'}</Text>
-        </View>
+        {profileData?.bio && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>About</Text>
+            <Text style={styles.bioText}>{profileData.bio}</Text>
+          </View>
+        )}
         
         {/* Personal Info Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Personal Info</Text>
-          
-          {profileData.occupation && (
-            <View style={styles.infoRow}>
-              <Ionicons name="briefcase-outline" size={20} color="#f44d7b" />
-              <Text style={styles.infoText}>{profileData.occupation}</Text>
-            </View>
-          )}
-          
-          {profileData.birthDate && (
-            <View style={styles.infoRow}>
-              <Ionicons name="calendar-outline" size={20} color="#f44d7b" />
-              <Text style={styles.infoText}>
-                {formatDate(profileData.birthDate)}
-              </Text>
-            </View>
-          )}
-          
-          {(profileData.city || profileData.state) && (
-            <View style={styles.infoRow}>
-              <Ionicons name="location-outline" size={20} color="#f44d7b" />
-              <Text style={styles.infoText}>
-                {[profileData.city, profileData.state].filter(Boolean).join(', ')}
-              </Text>
-            </View>
-          )}
-        </View>
+        {(profileData?.occupation || profileData?.birthDate || profileData?.city || profileData?.state) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Personal Info</Text>
+            
+            {profileData.occupation && (
+              <View style={styles.infoRow}>
+                <Ionicons name="briefcase-outline" size={20} color="#f44d7b" />
+                <Text style={styles.infoText}>{profileData.occupation}</Text>
+              </View>
+            )}
+            
+            {profileData.birthDate && profileData.birthDate.trim() !== "" && (
+              <View style={styles.infoRow}>
+                <Ionicons name="calendar-outline" size={20} color="#f44d7b" />
+                <Text style={styles.infoText}>
+                  {formatDate(profileData.birthDate)}
+                </Text>
+              </View>
+            )}
+            
+            {(profileData.city || profileData.state) && (
+              <View style={styles.infoRow}>
+                <Ionicons name="location-outline" size={20} color="#f44d7b" />
+                <Text style={styles.infoText}>
+                  {[profileData.city, profileData.state].filter(Boolean).join(', ')}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
         
         {/* Action Buttons */}
         {matchId && (
@@ -632,8 +473,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   headerSafeArea: {
-    backgroundColor: 'rgba(31, 34, 35, 1)',
+    backgroundColor: 'rgba(31, 34, 35, 0.95)',
     zIndex: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: 'rgba(31, 34, 35, 0.95)',
+  },
+  backButtonContainer: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  headerRightPlaceholder: {
+    width: 40,
   },
   loadingContainer: {
     flex: 1,
@@ -644,51 +515,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 10,
     fontSize: 16,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    color: '#f44d7b',
-    fontSize: 16,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  backButton: {
-    backgroundColor: '#f44d7b',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: 'rgba(31, 34, 35, 1)',
-  },
-  backButtonContainer: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  headerRightPlaceholder: {
-    width: 40,
   },
   scrollView: {
     flex: 1,
@@ -703,7 +529,7 @@ const styles = StyleSheet.create({
   },
   profileImageContainer: {
     width: '100%',
-    height: 350,
+    height: 400, // Increased height for better visual impact
     position: 'relative',
   },
   imageLoadingContainer: {
@@ -723,47 +549,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 160,
-  },
-  imageNavButton: {
-    position: 'absolute',
-    top: '50%',
-    transform: [{ translateY: -20 }],
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2,
-  },
-  imageNavButtonLeft: {
-    left: 15,
-  },
-  imageNavButtonRight: {
-    right: 15,
-  },
-  imageDots: {
-    position: 'absolute',
-    bottom: 15,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    zIndex: 2,
-  },
-  imageDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    marginHorizontal: 4,
-  },
-  activeImageDot: {
-    backgroundColor: '#f44d7b',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    height: 180, // Increased height for better text visibility
   },
   nameContainer: {
     position: 'absolute',
@@ -773,48 +559,57 @@ const styles = StyleSheet.create({
   },
   nameText: {
     color: '#fff',
-    fontSize: 28,
+    fontSize: 32, // Increased font size
     fontWeight: '700',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3,
+    marginBottom: 6,
+  },
+  locationWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
   },
   locationText: {
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 18,
     fontWeight: '500',
-    marginTop: 5,
+    marginLeft: 5,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
   },
   matchInfoContainer: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(40, 40, 40, 0.8)',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    marginTop: 16,
+    backgroundColor: 'rgba(40, 40, 40, 0.85)',
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 16,
+    marginTop: 20, // Increased margin
     marginHorizontal: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
+    shadowRadius: 5,
+    elevation: 8,
     alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   scoreContainer: {
     alignItems: 'center',
-    marginRight: 30,
+    marginRight: 40, // More spacing
   },
   scoreLabel: {
     color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 14,
-    marginBottom: 5,
+    fontSize: 15,
+    marginBottom: 6,
+    letterSpacing: 0.5,
   },
   scoreValue: {
     color: '#f44d7b',
-    fontSize: 18,
+    fontSize: 22, // Larger font
     fontWeight: '600',
   },
   rankContainer: {
@@ -822,69 +617,83 @@ const styles = StyleSheet.create({
   },
   rankLabel: {
     color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 14,
-    marginBottom: 5,
+    fontSize: 15,
+    marginBottom: 6,
+    letterSpacing: 0.5,
   },
   rankValue: {
-    fontSize: 18,
+    fontSize: 22, // Larger font
     fontWeight: '600',
   },
   section: {
-    padding: 20,
+    padding: 24,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 8,
   },
   sectionTitle: {
     color: '#f44d7b',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    marginBottom: 15,
+    marginBottom: 16,
+    letterSpacing: 0.5,
   },
   bioText: {
     color: '#fff',
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 26,
+    letterSpacing: 0.3,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 15,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(40, 40, 40, 0.5)',
-    borderRadius: 8,
+    marginBottom: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(50, 50, 50, 0.5)',
+    borderRadius: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#f44d7b',
   },
   infoText: {
     color: '#fff',
     fontSize: 16,
     marginLeft: 15,
+    letterSpacing: 0.2,
   },
   actionButtonsContainer: {
-    padding: 20,
-    alignItems: 'center',
+    paddingTop: 24,
+    width: '100%',
+    paddingHorizontal: 20,
   },
   messageButton: {
     width: '100%',
     borderRadius: 12,
-    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowOpacity: 0.27,
+    shadowRadius: 4.65,
     elevation: 6,
   },
   buttonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    width: '100%',
+    borderRadius: 12,
+    height: 54, // Taller button
   },
   buttonIcon: {
     marginRight: 10,
   },
   buttonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
 });

@@ -48,7 +48,8 @@ export default function MatchesScreen() {
     return () => subscription.remove();
   }, []);
 
-  // Navigate to Chat Screen
+
+  // When navigating from matches.tsx or similar:
   const handleMatchPress = (match: Match): void => {
     router.push({
       pathname: "/profile",
@@ -56,9 +57,8 @@ export default function MatchesScreen() {
         matchId: match.matchId,
         userId: match.matchedUser?.id,
         name: match.matchedUser?.name,
-        profileImage: match.matchedUser?.profileImage,
-        matchScore: match.matchScore ? match.matchScore.toString() : undefined,
-        matchRank: match.matchRank || undefined,
+        // Just pass the raw filename - nothing else
+        profileImage: match.matchedUser?.profileImage || '',
       }
     });
   };
