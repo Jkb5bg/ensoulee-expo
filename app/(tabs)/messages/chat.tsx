@@ -67,6 +67,8 @@ export default function ChatScreen() {
   const profileImage = params.profileImage as string;
   const [profileCacheKey, setProfileCacheKey] = useState<string>('');
   const { profileImagesCache, loadProfileImage } = useAppData();
+  const [avatarUri, setAvatarUri] = useState<string|null>(null);
+
 
   // Create a function to get the profile image (cached or fresh)
   const getProfileImageUrl = useCallback(async () => {
@@ -195,15 +197,29 @@ export default function ChatScreen() {
     return () => setCustomHeader(false);
   }, []);
 
-    // In a useEffect, calculate and set the cache key once when component mounts
+  // In a useEffect, calculate and set the cache key once when component mounts
   useEffect(() => {
-    if (userId && profileImage) {
-      const filename = profileImage.includes('/') 
-        ? profileImage.split('/').pop()?.split('?')[0] 
-        : profileImage;
-      setProfileCacheKey(`${userId}-${filename}`);
+    if (!userId || !profileImage) return;
+    // strip off any query-string so cache key is stable
+    const filename = profileImage.includes('/')
+      ? profileImage.split('/').pop()!.split('?')[0]
+      : profileImage;
+    const key = `${userId}-${filename}`;
+  
+    // if it’s already in your global cache, use it
+    if (profileImagesCache[key]) {
+      setAvatarUri(profileImagesCache[key]);
+    } else {
+      // otherwise fetch & cache it once
+      loadProfileImage(userId, filename)
+        .then(uri => {
+          if (uri) setAvatarUri(uri);
+        })
+        .catch(err => {
+          console.warn("Failed to load header avatar:", err);
+        });
     }
-  }, [userId, profileImage]);
+  }, [userId, profileImage, profileImagesCache, loadProfileImage]);
 
   useEffect(() => {
     if (safeProfileUri) {
@@ -850,22 +866,16 @@ const checkForUpdates = async () => {
                   onPress={navigateToProfile}
                   activeOpacity={0.7}
                 >
-                  <Image
-                    source={profileImagesCache[`${userId}-${
-                      profileImage && profileImage.includes('/') 
-                        ? profileImage.split('/').pop()?.split('?')[0] 
-                        : profileImage
-                    }`] 
-                      ? { uri: profileImagesCache[`${userId}-${
-                          profileImage && profileImage.includes('/') 
-                            ? profileImage.split('/').pop()?.split('?')[0] 
-                            : profileImage
-                        }`] } 
-                      : (safeProfileUri ? { uri: safeProfileUri } : DEFAULT_AVATAR)}
-                    style={styles.chatAvatar}
-                    defaultSource={DEFAULT_AVATAR}
-                    onError={(e) => console.warn("Image failed to load:", e.nativeEvent.error)}
-                  />
+                <Image
+                  source={
+                    avatarUri
+                      ? { uri: avatarUri }
+                      : (safeProfileUri ? { uri: safeProfileUri } : DEFAULT_AVATAR)
+                  }
+                  style={styles.chatAvatar}
+                  defaultSource={DEFAULT_AVATAR}
+                  onError={e => console.warn("Header avatar load failed:", e.nativeEvent.error)}
+                />
                   <Text style={styles.chatName}>{userName}</Text>
                 </TouchableOpacity>
               </View>

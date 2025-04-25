@@ -156,6 +156,7 @@ export default function MatchesScreen() {
       showLoading('Loading your matches...');
       
       const data = await GetUserMatches(userInfo, authTokens.idToken);
+      console.log(data);
       console.log('Matches data received:', data?.length || 0);
 
       if (data && Array.isArray(data)) {

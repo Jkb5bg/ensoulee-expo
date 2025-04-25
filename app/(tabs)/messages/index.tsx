@@ -18,10 +18,11 @@ import { useAuth } from '@/components/AuthContext';
 import { StatusBar } from 'expo-status-bar';
 import MatchType from '@/types/matchType';
 import { GetUserMatches } from '@/api/GetUserMatches';
-import { GetUserProfileImage } from '@/api/GetUserProfileImage';
+import { GetUserProfileImages } from '@/api/GetUserProfileImages';
 import { useAppContext } from '@/components/TabsContext';
 import NotificationsIcon from "@/components/icons/NotificationsIcon";
 import SettingsIcon from "@/components/icons/SettingsIcon";
+import User from '@/types/user';
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 
@@ -100,40 +101,43 @@ export default function Messages() {
   }, [user, userInfo]);
 
   // Load image URL function
-  const loadImageUrl = useCallback(async (userId: string, filename: string) => {
-    if (!filename || !userInfo || !user) return DEFAULT_AVATAR;
-
-    try {
-      if (!token) return DEFAULT_AVATAR;
-
-      // Create minimal user object with necessary properties for the API function
-      const userDataForImage = {
-        id: userId,
-        imageFilenames: [filename]
-      };
-
-      // Use your existing GetUserProfileImage function
-      const imageUrl = await GetUserProfileImage(userInfo, token, userDataForImage as any);
-      
-      if (imageUrl) {
-        // Extract the actual filename if it's a full URL
-        const extractedFilename = filename.split('/').pop()?.split('?')[0] || filename;
-        
-        // Store the image URL in our local state
-        setImageUrls(prev => ({
-          ...prev,
-          [`${userId}-${extractedFilename}`]: imageUrl
-        }));
-        
-        return imageUrl;
+  const loadImageUrl = useCallback(
+    async (userId: string, profileImage: string) => {
+      if (!userInfo) {
+        // nothing to do if we don’t have token info
+        return DEFAULT_AVATAR;
       }
-      
-      return DEFAULT_AVATAR;
-    } catch (error) {
-      console.error('Error loading image URL:', error);
-      return DEFAULT_AVATAR;
-    }
-  }, [user, userInfo]);
+      // 1) If it's already an HTTP URL, just stash it
+      if (profileImage.startsWith("http")) {
+        setImageUrls(prev => ({ ...prev, [userId]: profileImage }));
+        return profileImage;
+      }
+
+      // 2) Otherwise fall back to calling your image API
+      try {
+        const userDataForImage = {
+          userName: userId,               
+          imageFilenames: [profileImage], 
+        } as User;
+
+        const urls = await GetUserProfileImages(userInfo, token, userDataForImage);
+        const first = Array.isArray(urls) && urls.length > 0 ? urls[0] : null;
+
+        if (first) {
+          setImageUrls(prev => ({ ...prev, [userId]: first }));
+          return first;
+        }
+      } catch (e) {
+        console.error("Image fetch failed:", e);
+      }
+
+      // 3) Finally, fallback to the raw S3 path pattern
+      const fallback = `https://ensoulee-user-images.s3.amazonaws.com/${userId}/${profileImage}`;
+      setImageUrls(prev => ({ ...prev, [userId]: fallback }));
+      return fallback;
+    },
+    [userInfo, token]
+  );
 
   // Helper function to get image URL from local state
   const getImageUrl = useCallback((userId: string, imageFilename?: string) => {
@@ -192,9 +196,8 @@ export default function Messages() {
   // Render match list item
   const renderMatchItem = ({ item }: { item: MatchType }) => {
     // Create a default image URL regardless of whether there's a profile image
-    const imageUrl = item.matchedUser.profileImage ? 
-      getImageUrl(item.matchedUser.id, item.matchedUser.profileImage) : 
-      DEFAULT_AVATAR;
+    const uri = imageUrls[item.matchedUser.id] || DEFAULT_AVATAR;
+
     
     return (
       <TouchableOpacity
@@ -203,9 +206,12 @@ export default function Messages() {
       >
         <View style={styles.matchItemContent}>
           <Image
-            source={typeof imageUrl === 'string' ? { uri: imageUrl } : imageUrl}
-            style={styles.avatar}
-            defaultSource={DEFAULT_AVATAR}
+          source={ typeof uri === "string" && uri.startsWith("http")
+            ? { uri }
+            : DEFAULT_AVATAR
+          }
+          style={styles.avatar}
+          onError={e => console.warn("Image failed:", e.nativeEvent.error)}
           />
           <View style={styles.matchDetails}>
             <Text style={styles.matchName}>{item.matchedUser.name}</Text>
