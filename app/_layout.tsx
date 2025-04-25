@@ -10,6 +10,8 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import NotificationRegistration from '@/components/NotificationRegistration';
+import {router} from 'expo-router';
+import NotificationHandler from '@/components/NotificationHandler';
 
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -142,12 +144,38 @@ export default function RootLayout() {
         }
     }, []);
 
+    const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
+        const data = response.notification.request.content.data;
+        
+        // If notification contains conversation data, navigate to that conversation
+        if (data && data.conversationId) {
+          console.log('Navigating to conversation:', data.conversationId);
+          
+          // First navigate to the messages tab
+          router.navigate('/(tabs)/messages');
+          
+          // Then, after a short delay to ensure the tab is loaded, navigate to the specific chat
+          setTimeout(() => {
+            router.navigate({
+              pathname: '/messages/chat',
+              params: {
+                matchId: data.conversationId,
+                userId: data.senderId,
+                userName: data.senderName,
+                // We'll need to get the profile image elsewhere since it's not in the notification data
+              }
+            });
+          }, 300);
+        }
+      };
+
     return (
         <View style={styles.container}>
             <LoadingProvider>
                 <AuthProvider>
                     <AppProvider>
-                    {expoPushToken ? <NotificationRegistration expoPushToken={expoPushToken} /> : null}
+                        <NotificationHandler />
+                        {expoPushToken ? <NotificationRegistration expoPushToken={expoPushToken} /> : null}
 
                         <StatusBar hidden={false} translucent style="light" />
                         {/* Define Stack navigation for the entire app */}
