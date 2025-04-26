@@ -39,6 +39,10 @@ import {
 } from '@/storage/chatStorageSQLite';
 import { CheckForMessageUpdate } from '@/api/CheckForMessageUpdate';
 import { cleanPresignedUrl } from '@/utils/imageHelpers';
+import ChatHeaderAvatar from '@/components/ChatHeaderAvatar';
+import DecodedTokenInfo from '@/types/decodedTokenInfo';
+import { GetUserProfileImages } from '@/api/GetUserProfileImages';
+import User from '@/types/user';
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 const { width, height } = Dimensions.get('window');
@@ -60,6 +64,10 @@ export default function ChatScreen() {
   const userName = params.userName as string;
   const userId = params.userId as string;
   const profileImage = params.profileImage as string;
+  const messageCheckTimestampRef = useRef<number | null>(null);
+  console.log('[ChatScreen] route param profileImage:', profileImage);
+
+
   
   // Context and state
   const { user, userInfo, authTokens } = useAuth();
@@ -85,22 +93,51 @@ export default function ChatScreen() {
 
   // Process profile image when it changes
   useEffect(() => {
-    if (profileImage) {
-      try {
-        // Clean and process the image URL
-        const cleanedUrl = cleanPresignedUrl(profileImage);
-        console.log("Cleaned profile image URL:", cleanedUrl ? cleanedUrl.substring(0, 50) + '...' : 'none');
-        setProcessedImageUrl(cleanedUrl);
-        setImageLoadError(false);
-      } catch (error) {
-        console.error("Error processing profile image URL:", error);
-        setProcessedImageUrl(null);
-        setImageLoadError(true);
-      }
+    console.log("[ChatScreen] Processing profile image - length:", profileImage ? profileImage.length : 0);
+    
+    if (profileImage && profileImage.trim() !== '') {
+      // Just pass the URL directly without any processing
+      setProcessedImageUrl(profileImage);
+      setImageLoadError(false);
     } else {
+      console.log("[ChatScreen] No profile image provided, using default");
       setProcessedImageUrl(null);
     }
   }, [profileImage]);
+
+  useEffect(() => {
+    // If we got a filename (not an http URL), pull the real presigned URL now
+    if (profileImage && 
+        profileImage.trim() !== '' && 
+        !profileImage.startsWith('http') && 
+        userInfo && token) {
+        
+      console.log("[ChatScreen] Fetching profile image for filename:", profileImage);
+      
+      (async () => {
+        try {
+          // Create a proper user object for the API call
+          const userObj = {
+            userName: userId,
+            imageFilenames: [profileImage]
+          } as unknown as User;
+          
+          const urls = await GetUserProfileImages(userInfo, token, userObj);          
+          console.log("[ChatScreen] Received image URLs:", urls);
+          
+          const first = Array.isArray(urls) && urls.length > 0 ? urls[0] : null;
+          if (first) {
+            const cleaned = cleanPresignedUrl(first);
+            console.log("[ChatScreen] Setting processed image URL to:", cleaned);
+            setProcessedImageUrl(cleaned);
+          }
+        } catch (e) {
+          console.warn('[ChatScreen] Chat header avatar fetch failed:', e);
+        }
+      })();
+    }
+  }, [profileImage, userInfo, token, userId]);
+  
 
   // Add a search function
   const searchMessages = (query: string) => {
@@ -371,31 +408,75 @@ export default function ChatScreen() {
   }, [db, matchId, user?.userName, userInfo?.userName, token, messages]);
 
   // Inside your component where you need to check for updates
-  const checkForUpdates = async () => {
+  // Modified checkForUpdates function
+  const checkForUpdates = useCallback(async () => {
     if (!matchId || !userInfo || !authTokens?.idToken) return;
     
+    // Check if sync is already in progress
+    if (isSyncInProgress(matchId)) {
+      console.log(`Sync already in progress for chat ${matchId}, skipping update check`);
+      return;
+    }
+    
     try {
+      // Add a debounce mechanism
+      const now = Date.now();
+      const lastCheck = messageCheckTimestampRef.current || 0;
+      
+      // Only check for updates every 30 seconds
+      if (now - lastCheck < 30000) {
+        console.log(`Skipping update check, last check was ${Math.round((now - lastCheck)/1000)}s ago`);
+        return;
+      }
+      
+      messageCheckTimestampRef.current = now;
+      
       // Get the most recent timestamp from local storage
       const latestTimestamp = await getLastMessageTimestamp(db, matchId);
       
       if (latestTimestamp) {
-        // Check if there are newer messages on the server
-        const hasUpdates = await CheckForMessageUpdate(
-          userInfo, 
-          authTokens.idToken, 
-          matchId, 
-          latestTimestamp
-        );
+        console.log(`Checking for updates since timestamp ${latestTimestamp}`);
+        
+        // Set sync flag early to prevent concurrent checks
+        setSyncInProgress(matchId, true);
+        
+        try {
+          // Check if there are newer messages on the server
+          const hasUpdates = await CheckForMessageUpdate(
+            userInfo, 
+            authTokens.idToken, 
+            matchId, 
+            latestTimestamp
+          );
 
-        if (hasUpdates == true) {
-          // If there are updates, fetch the new messages
-          fetchMessages(latestTimestamp);
+          if (hasUpdates) {
+            console.log('New messages available, fetching updates');
+            fetchMessages(latestTimestamp);
+          } else {
+            // Important: release sync lock if no updates
+            setSyncInProgress(matchId, false);
+            console.log('No new messages available');
+          }
+        } catch (error) {
+          // Important: release sync lock on error
+          setSyncInProgress(matchId, false);
+          
+          // Handle rate limiting specifically
+          if (error instanceof Error && (error.message.includes('429') || error.message.includes('Rate limit'))) {
+            console.log('Rate limit exceeded, will try again later');
+            // Reset timestamp to allow retry after delay
+            messageCheckTimestampRef.current = now - 25000; // retry in 5 seconds
+          } else {
+            console.error('Error checking for message updates:', error);
+          }
         }
       }
     } catch (error) {
-      console.error('Error checking for message updates:', error);
+      console.error('Error in checkForUpdates:', error);
+      // Always release sync lock on error
+      setSyncInProgress(matchId, false);
     }
-  };
+  }, [db, matchId, userInfo, authTokens, fetchMessages]);
 
   // Group messages by date and add date separators
   const groupMessagesByDate = (messageList: MessageType[]) => {
@@ -540,95 +621,90 @@ export default function ChatScreen() {
   // Load messages on component mount
   useEffect(() => {
     let isMounted = true;
-    
-    const loadMessages = async () => {
+  
+    const initializeChat = async () => {
       if (!matchId || !db || !userInfo || !authTokens?.idToken) return;
-      
+  
       try {
+        // 1) Load from local SQLite
         const storedData = await getChatMessages(db, matchId);
-        const lastSynced = storedData?.lastSynced;
-        
-        // Important: check if component is still mounted
-        if (!isMounted) return;
-        
-        // If we have local messages, show them immediately
-        if (storedData && storedData.messages.length > 0) {
-          setMessages(storedData.messages);
-          setLoading(false);
-          
-          // Find the most recent message timestamp
-          let latestTimestamp = null;
-          if (storedData.messages.length > 0) {
-            // Sort by timestamp descending and get the first one
-            const sortedMessages = [...storedData.messages].sort((a, b) => b.timestamp - a.timestamp);
-            latestTimestamp = sortedMessages[0].timestamp;
+  
+        if (storedData) {
+          const { messages: storedMessages, lastSynced } = storedData;
+  
+          // only set messages if we actually have any
+          if (storedMessages.length > 0) {
+            setMessages(storedMessages);
           }
-          
-          // Check if there are newer messages on the server
-          if (latestTimestamp) {
-            try {
-              console.log(`Checking for updates since timestamp ${latestTimestamp}`);
-              const hasUpdates = await CheckForMessageUpdate(
-                userInfo,
-                authTokens.idToken,
-                matchId,
-                latestTimestamp
-              );
-              
-              if (hasUpdates) {
-                console.log('New messages available, fetching updates');
-                fetchMessages(latestTimestamp);
-              } else {
-              }
-            } catch (error) {
-              console.error('Error checking for message updates:', error);
-              
-              // Fallback to time-based sync if the check fails
-              const now = Date.now();
-              const shouldSync = !lastSynced || (now - lastSynced) > 30000; // 30 seconds
-              
-              if (shouldSync) {
-                // Sync in background
-                fetchMessages(lastSynced);
-              }
-            }
-          } else {
-            // No messages with timestamps, do a time-based sync
-            const now = Date.now();
-            const shouldSync = !lastSynced || (now - lastSynced) > 30000; // 30 seconds
-            
-            if (shouldSync) {
-              // Sync in background
-              fetchMessages(lastSynced);
-            } else {
-              console.log(`Skipping backend sync - last synced ${Math.round((now - lastSynced)/1000)}s ago`);
-            }
+  
+          // compute latest timestamp safely
+          const latest =
+            lastSynced ??
+            storedMessages[0]?.timestamp ??
+            0;
+  
+          // 2) One immediate backend-check
+          const hasUpdates = await CheckForMessageUpdate(
+            userInfo,
+            authTokens.idToken,
+            matchId,
+            latest
+          );
+  
+          if (hasUpdates) {
+            await fetchMessages(latest);
           }
-        } else {
-          // No local messages, do a full fetch
-          fetchMessages();
         }
       } catch (error) {
-        console.error('Error in loadMessages:', error);
+        console.warn('Initial load or update-check failed:', error);
+      } finally {
+        // 3) Prevent the interval from firing immediately
+        messageCheckTimestampRef.current = Date.now();
+        // 4) Clear loading state
         if (isMounted) {
           setLoading(false);
-          Alert.alert('Error', 'Failed to load messages');
         }
       }
     };
-    
-    loadMessages();
-    
-    // Cleanup function to prevent state updates after unmount
+  
+    initializeChat();
+  
     return () => {
       isMounted = false;
+      if (matchId && isSyncInProgress(matchId)) {
+        setSyncInProgress(matchId, false);
+      }
+    };
+  }, [db, matchId, userInfo, authTokens?.idToken]);
+  
+
+  // Set up a controlled interval for checking updates
+  useEffect(() => {
+    let isMounted = true;
+    let checkInterval: NodeJS.Timeout;
+    
+    // Set up a reasonable interval (every 30 seconds)
+    const setupInterval = () => {
+      checkInterval = setInterval(() => {
+        if (isMounted) {
+          checkForUpdates();
+        }
+      }, 30000); // 30 seconds
+    };
+    
+    setupInterval();
+    
+    // Clean up on unmount
+    return () => {
+      isMounted = false;
+      clearInterval(checkInterval);
       
       // Release sync lock if component unmounts during sync
       if (matchId && isSyncInProgress(matchId)) {
         setSyncInProgress(matchId, false);
       }
     };
-  }, [db, matchId, userInfo, authTokens, fetchMessages]);
+  }, [checkForUpdates, matchId]);
 
   // Refreshing logic - pull to refresh
   const handleRefresh = useCallback(() => {
@@ -783,27 +859,13 @@ export default function ChatScreen() {
                   style={styles.userInfoContainer}
                   onPress={navigateToProfile}
                   activeOpacity={0.7}
-                >
-                  <View style={styles.chatAvatarContainer}>
-                    {/* Show loading indicator while the image is loading */}
-                    {!imageLoadError && !processedImageUrl && (
-                      <View style={styles.chatAvatarLoading}>
-                        <ActivityIndicator size="small" color="#f44d7b" />
-                      </View>
-                    )}
-                    
-                    {/* Display the image or fallback to default */}
-                    <Image
-                      source={processedImageUrl && !imageLoadError ? { uri: processedImageUrl } : DEFAULT_AVATAR}
-                      style={styles.chatAvatar}
-                      onError={(e) => {
-                        console.warn("Header avatar load failed:", e.nativeEvent.error);
-                        console.warn("Attempted URL:", processedImageUrl);
-                        setImageLoadError(true);
-                      }}
-                      defaultSource={DEFAULT_AVATAR}
-                    />
-                  </View>
+                  >
+                  <ChatHeaderAvatar
+                    imageUrl={processedImageUrl}
+                    userName={userName}
+                    size={40}
+                  />
+
                   <Text style={styles.chatName}>{userName}</Text>
                 </TouchableOpacity>
               </View>

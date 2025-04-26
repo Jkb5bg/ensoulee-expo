@@ -121,6 +121,7 @@ export default function Messages() {
         } as User;
 
         const urls = await GetUserProfileImages(userInfo, token, userDataForImage);
+        console.log(urls);
         const first = Array.isArray(urls) && urls.length > 0 ? urls[0] : null;
 
         if (first) {
@@ -151,19 +152,24 @@ export default function Messages() {
   }, [imageUrls]);
 
   const navigateToChat = (match: MatchType) => {
-    // Get image URL before navigating
-    let imageUrl = DEFAULT_AVATAR;
-    if (match.matchedUser.profileImage) {
-      const tempUrl = getImageUrl(match.matchedUser.id, match.matchedUser.profileImage);
-      if (typeof tempUrl === 'string') {
-        imageUrl = tempUrl;
-      }
+    // Get image URL
+    let imageUrl = null;
+    
+    // First check if we have a cached URL
+    if (imageUrls[match.matchedUser.id]) {
+      imageUrl = imageUrls[match.matchedUser.id];
+    } 
+    // Otherwise, use the profile image from the match data
+    else if (match.matchedUser.profileImage) {
+      imageUrl = match.matchedUser.profileImage;
     }
+    
+    console.log(`Navigating to chat with ${match.matchedUser.name}, image URL length:`, imageUrl ? imageUrl.length : 0);
     
     // Set the custom header BEFORE navigation to prevent flickering
     setCustomHeader(true);
     
-    // Short timeout to ensure state updates before navigation
+    // Navigate to chat screen with all params
     setTimeout(() => {
       router.push({
         pathname: "/messages/chat",
@@ -171,7 +177,7 @@ export default function Messages() {
           matchId: match.matchId,
           userId: match.matchedUser.id,
           userName: match.matchedUser.name,
-          profileImage: typeof imageUrl === 'string' ? imageUrl : ''
+          profileImage: imageUrl || ''
         }
       });
     }, 10);
