@@ -541,21 +541,24 @@ export default function SettingsScreen() {
           <Text style={styles.userEmail}>{profileData.email}</Text>
 
           <View style={styles.planBadge}>
-            <Text style={styles.planText}>{profileData.plan || 'FREE'}</Text>
+            <Text style={styles.planText}>{profileData.tier || 'FREE'}</Text>
           </View>
 
-          {profileData.tier === 'FREE' && (
-            <TouchableOpacity style={styles.upgradePlanButton}>
+          {profileData.tier !== 'PREMIUM' && (
+            <TouchableOpacity style={styles.upgradePlanButton} onPress={() => router.push('/subscription')}>
               <LinearGradient
                 colors={['#FF7B6F', '#F44D7B']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.upgradePlanGradient}
               >
-                <Text style={styles.upgradePlanButtonText}>Upgrade plan</Text>
+                <Text style={styles.upgradePlanButtonText}>
+                  {profileData.tier === 'FREE' ? 'Upgrade plan' : 'View other plans'}
+                </Text>
               </LinearGradient>
             </TouchableOpacity>
           )}
+
 
           <TouchableOpacity
             style={styles.signOutButton}

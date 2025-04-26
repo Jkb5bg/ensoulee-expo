@@ -221,6 +221,14 @@ export default function RootLayout() {
                                     presentation: 'card',
                                 }}
                             />
+
+                            <Stack.Screen
+                                name="subscription"
+                                options={{
+                                    headerShown: false,
+                                    presentation: 'card',
+                                }}
+                            />
                         </Stack>
                     </AppProvider>
                 </AuthProvider>

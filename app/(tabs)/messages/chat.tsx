@@ -38,6 +38,7 @@ import {
   clearChatStorage
 } from '@/storage/chatStorageSQLite';
 import { CheckForMessageUpdate } from '@/api/CheckForMessageUpdate';
+import { cleanPresignedUrl } from '@/utils/imageHelpers';
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 const { width, height } = Dimensions.get('window');
@@ -51,12 +52,6 @@ const chatHeaderPaddingTop = Platform.OS === 'ios'
 const chatHeaderHeight = Platform.OS === 'ios'
   ? (isSmallDevice ? 90 : (isLargeDevice ? 130 : 110))
   : (isSmallDevice ? 80 : 100);
-  
-
-// TODO: Fix the time stamp CSS. 
-// TODO: Fix so that messages save locally and aren't overwritten by the backend incoming.
-// TODO: Fix up the backend so messages get archived.
-// TODO: Implement handling for reporting, blocking, and unmatching.
 
 export default function ChatScreen() {
   // Get route params
@@ -65,38 +60,6 @@ export default function ChatScreen() {
   const userName = params.userName as string;
   const userId = params.userId as string;
   const profileImage = params.profileImage as string;
-  const [profileCacheKey, setProfileCacheKey] = useState<string>('');
-  const { profileImagesCache, loadProfileImage } = useAppData();
-  const [avatarUri, setAvatarUri] = useState<string|null>(null);
-
-
-  // Create a function to get the profile image (cached or fresh)
-  const getProfileImageUrl = useCallback(async () => {
-    if (!userId || !profileImage) return null;
-    
-    // Extract filename from URL if needed
-    let filename = profileImage;
-    if (profileImage.includes('/')) {
-      const parts = profileImage.split('/');
-      filename = parts[parts.length - 1].split('?')[0]; // Remove query params
-    }
-    
-    // Check if we have it in cache first
-    const cacheKey = `${userId}-${filename}`;
-    if (profileImagesCache[cacheKey]) {
-      return profileImagesCache[cacheKey];
-    }
-    
-    // If not in cache, load it
-    return await loadProfileImage(userId, filename);
-  }, [userId, profileImage, profileImagesCache, loadProfileImage]);
-
-  const safeProfileUri = React.useMemo(() => {
-    if (!profileImage) return null;
-    // first encode URI components, then fix the pluses
-    return encodeURI(profileImage).replace(/\+/g, '%2B');
-  }, [profileImage]);
-  
   
   // Context and state
   const { user, userInfo, authTokens } = useAuth();
@@ -109,11 +72,35 @@ export default function ChatScreen() {
   const [newMessage, setNewMessage] = useState('');
   const flatListRef = useRef<FlatList>(null);
   const token = authTokens?.idToken || '';
-    // Add these state variables to your component
+  
+  // For search functionality
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<number[]>([]); // indices of matching messages
   const [currentResultIndex, setCurrentResultIndex] = useState(-1);
+  
+  // Image loading state
+  const [processedImageUrl, setProcessedImageUrl] = useState<string | null>(null);
+  const [imageLoadError, setImageLoadError] = useState(false);
+
+  // Process profile image when it changes
+  useEffect(() => {
+    if (profileImage) {
+      try {
+        // Clean and process the image URL
+        const cleanedUrl = cleanPresignedUrl(profileImage);
+        console.log("Cleaned profile image URL:", cleanedUrl ? cleanedUrl.substring(0, 50) + '...' : 'none');
+        setProcessedImageUrl(cleanedUrl);
+        setImageLoadError(false);
+      } catch (error) {
+        console.error("Error processing profile image URL:", error);
+        setProcessedImageUrl(null);
+        setImageLoadError(true);
+      }
+    } else {
+      setProcessedImageUrl(null);
+    }
+  }, [profileImage]);
 
   // Add a search function
   const searchMessages = (query: string) => {
@@ -151,12 +138,11 @@ export default function ChatScreen() {
   const navigateToProfile = () => {
     router.push({
       pathname: "/profile",
-      params: {
+      params: { 
         matchId,
         userId,
         name: userName,
-        profileImage: safeProfileUri, 
-        // Add other params if available
+        profileImage: profileImage || '', 
       }
     });
   };
@@ -196,39 +182,6 @@ export default function ChatScreen() {
     // Cleanup function
     return () => setCustomHeader(false);
   }, []);
-
-  // In a useEffect, calculate and set the cache key once when component mounts
-  useEffect(() => {
-    if (!userId || !profileImage) return;
-    // strip off any query-string so cache key is stable
-    const filename = profileImage.includes('/')
-      ? profileImage.split('/').pop()!.split('?')[0]
-      : profileImage;
-    const key = `${userId}-${filename}`;
-  
-    // if it’s already in your global cache, use it
-    if (profileImagesCache[key]) {
-      setAvatarUri(profileImagesCache[key]);
-    } else {
-      // otherwise fetch & cache it once
-      loadProfileImage(userId, filename)
-        .then(uri => {
-          if (uri) setAvatarUri(uri);
-        })
-        .catch(err => {
-          console.warn("Failed to load header avatar:", err);
-        });
-    }
-  }, [userId, profileImage, profileImagesCache, loadProfileImage]);
-
-  useEffect(() => {
-    if (safeProfileUri) {
-      Image.prefetch(safeProfileUri)
-        .catch(err => console.warn("prefetch failed:", err));
-    }
-  }, [safeProfileUri]);
-  
-
 
   const renderItem = ({ item }: { item: MessageType | { isDateSeparator: true; date: string; timestamp: number } }) => {
     // Check if this is a date separator
@@ -415,36 +368,34 @@ export default function ChatScreen() {
       setSyncingMessages(false);
       setSyncInProgress(matchId, false);
     }
-  // Only include stable dependencies to prevent re-runs
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, matchId, user?.userName, userInfo?.userName, token]);
+  }, [db, matchId, user?.userName, userInfo?.userName, token, messages]);
 
   // Inside your component where you need to check for updates
-const checkForUpdates = async () => {
-  if (!matchId || !userInfo || !authTokens?.idToken) return;
-  
-  try {
-    // Get the most recent timestamp from local storage
-    const latestTimestamp = await getLastMessageTimestamp(db, matchId);
+  const checkForUpdates = async () => {
+    if (!matchId || !userInfo || !authTokens?.idToken) return;
     
-    if (latestTimestamp) {
-      // Check if there are newer messages on the server
-      const hasUpdates = await CheckForMessageUpdate(
-        userInfo, 
-        authTokens.idToken, 
-        matchId, 
-        latestTimestamp
-      );
+    try {
+      // Get the most recent timestamp from local storage
+      const latestTimestamp = await getLastMessageTimestamp(db, matchId);
+      
+      if (latestTimestamp) {
+        // Check if there are newer messages on the server
+        const hasUpdates = await CheckForMessageUpdate(
+          userInfo, 
+          authTokens.idToken, 
+          matchId, 
+          latestTimestamp
+        );
 
-      if (hasUpdates == true) {
-        // If there are updates, fetch the new messages
-        fetchMessages(latestTimestamp);
+        if (hasUpdates == true) {
+          // If there are updates, fetch the new messages
+          fetchMessages(latestTimestamp);
+        }
       }
+    } catch (error) {
+      console.error('Error checking for message updates:', error);
     }
-  } catch (error) {
-    console.error('Error checking for message updates:', error);
-  }
-};
+  };
 
   // Group messages by date and add date separators
   const groupMessagesByDate = (messageList: MessageType[]) => {
@@ -502,7 +453,6 @@ const checkForUpdates = async () => {
   };
 
   const groupedMessages = groupMessagesByDate(messages);
-
 
   // Handle sending a message
   const handleSendMessage = useCallback(async () => {
@@ -678,9 +628,7 @@ const checkForUpdates = async () => {
         setSyncInProgress(matchId, false);
       }
     };
-  // Only include stable dependencies to prevent re-runs
-  // eslint-disable-next-line react-hooks/exhaustive-deps  
-  }, [db, matchId, userInfo, authTokens]);
+  }, [db, matchId, userInfo, authTokens, fetchMessages]);
 
   // Refreshing logic - pull to refresh
   const handleRefresh = useCallback(() => {
@@ -701,36 +649,6 @@ const checkForUpdates = async () => {
           )
         )}
       </>
-    );
-  };
-
-  // Render message bubble
-  const renderMessageItem = ({ item, index }: { item: MessageType; index: number }) => {
-    const isCurrentUser = item.senderId === (user?.userName || userInfo?.userName);
-    const isSearchResult = searchResults.includes(index);
-    const isCurrentResult = index === searchResults[currentResultIndex];
-    
-    return (
-      <View style={[
-        styles.messageBubble,
-        isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage,
-        item.pending && styles.pendingMessage,
-        isSearchResult && styles.searchResultMessage,
-        isCurrentResult && styles.currentSearchResult
-      ]}>
-        <Text style={styles.messageText}>
-          {searchQuery && item.content ? (
-            // Highlight search term in the message
-            highlightSearchTerm(item.content, searchQuery)
-          ) : (
-            item.content
-          )}
-        </Text>
-        <Text style={styles.messageTime}>
-          {formatMessageDate(item.timestamp)}
-          {item.pending && ' • Sending...'}
-        </Text>
-      </View>
     );
   };
 
@@ -866,16 +784,26 @@ const checkForUpdates = async () => {
                   onPress={navigateToProfile}
                   activeOpacity={0.7}
                 >
-                <Image
-                  source={
-                    avatarUri
-                      ? { uri: avatarUri }
-                      : (safeProfileUri ? { uri: safeProfileUri } : DEFAULT_AVATAR)
-                  }
-                  style={styles.chatAvatar}
-                  defaultSource={DEFAULT_AVATAR}
-                  onError={e => console.warn("Header avatar load failed:", e.nativeEvent.error)}
-                />
+                  <View style={styles.chatAvatarContainer}>
+                    {/* Show loading indicator while the image is loading */}
+                    {!imageLoadError && !processedImageUrl && (
+                      <View style={styles.chatAvatarLoading}>
+                        <ActivityIndicator size="small" color="#f44d7b" />
+                      </View>
+                    )}
+                    
+                    {/* Display the image or fallback to default */}
+                    <Image
+                      source={processedImageUrl && !imageLoadError ? { uri: processedImageUrl } : DEFAULT_AVATAR}
+                      style={styles.chatAvatar}
+                      onError={(e) => {
+                        console.warn("Header avatar load failed:", e.nativeEvent.error);
+                        console.warn("Attempted URL:", processedImageUrl);
+                        setImageLoadError(true);
+                      }}
+                      defaultSource={DEFAULT_AVATAR}
+                    />
+                  </View>
                   <Text style={styles.chatName}>{userName}</Text>
                 </TouchableOpacity>
               </View>
@@ -1035,11 +963,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chatAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  chatAvatarContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     marginRight: 10,
+    overflow: 'hidden',
+    backgroundColor: '#333',
+    position: 'relative',
+  },
+  chatAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  chatAvatarLoading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(51, 51, 51, 0.7)',
+    zIndex: 1,
   },
 
   // Loading and empty states
