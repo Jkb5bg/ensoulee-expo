@@ -1,277 +1,323 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { GetUserMatches } from '@/api/GetUserMatches';
-import { GetPotentialMatches } from '@/api/GetPotentialMatches';
-import { GetUserProfileImage } from '@/api/GetUserProfileImage';
+// components/AppDataContext.tsx
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
+import { Alert } from 'react-native';
 import { useAuth } from './AuthContext';
 import { useLoading } from './LoadingContext';
+import { GetPotentialMatches } from '@/api/GetPotentialMatches';
+import { GetUserMatches } from '@/api/GetUserMatches';
+import { GetUserProfileImages } from '@/api/GetUserProfileImages';
 import AppDataContextType from '@/types/appDataContextType';
+import Profile from '@/types/profile';
+import Match from '@/types/matchType';
+import User from '@/types/user';
 
-// Create the context
+// Create context with default values
 const AppDataContext = createContext<AppDataContextType>({
   matches: [],
   potentialMatches: [],
   userProfileImage: null,
-  profileImagesCache: {},  // Add cache to the context
-  loadProfileImage: async () => null,  // Add function to the context
+  profileImagesCache: {},
+  loadProfileImage: async () => null,
   refreshMatches: async () => {},
   refreshPotentialMatches: async () => {},
   refreshAllData: async () => {},
   isLoading: false
 });
 
-// Provider props type
-interface AppDataProviderProps {
-  children: ReactNode;
-}
-
 // Provider component
-export const AppDataProvider = ({ children }: AppDataProviderProps) => {
+export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // State for matches and potential matches
   const [matches, setMatches] = useState<any[]>([]);
   const [potentialMatches, setPotentialMatches] = useState<any[]>([]);
+  const [profileImagesCache, setProfileImagesCache] = useState<Record<string, string>>({});
   const [userProfileImage, setUserProfileImage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [profileImagesCache, setProfileImagesCache] = useState<Record<string, string>>({}); // Profile image cache state
-  const [isInitialized, setIsInitialized] = useState(false);
-
-  // Refs to track API calls in progress
-  const isFetchingMatches = useRef(false);
-  const isFetchingPotentials = useRef(false);
-  const isFetchingImage = useRef(false);
-  const isInitializing = useRef(false);
-
-  const { authTokens, userInfo } = useAuth();
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  
+  // Prevent duplicate initializations
+  const initializedRef = useRef<boolean>(false);
+  
+  // Get auth context
+  const { userInfo, authTokens } = useAuth();
   const { showLoading, hideLoading } = useLoading();
 
-  // Load user profile image
-  const loadUserProfileImage = async () => {
-    if (!userInfo || !authTokens?.idToken) return null;
-
-    // Prevent duplicate calls
-    if (isFetchingImage.current) return null;
-    isFetchingImage.current = true;
-
-    try {
-      console.log("[AppDataContext] Loading user profile image");
-      const imageUrl = await GetUserProfileImage(userInfo, authTokens.idToken);
-      if (imageUrl) {
-        setUserProfileImage(imageUrl);
-      }
-      return imageUrl;
-    } catch (error) {
-      console.error('Error loading profile image:', error);
-      return null;
-    } finally {
-      isFetchingImage.current = false;
+  // Process match data to ensure consistent format
+  const processMatchData = (matchData: any): Match => {
+    const RANKS = ["PLATINUM", "GOLD", "SILVER", "BRONZE", "UNRANKED"];
+    
+    // If matchedUser info is missing, create placeholder
+    if (!matchData.matchedUser) {
+      matchData.matchedUser = {
+        id: matchData.userName2 || `unknown-${matchData.id}`,
+        name: "Unknown User",
+        userName: matchData.userName2 || `unknown-${matchData.id}`,
+        profileImage: null
+      };
     }
+
+    // Handle matchRank
+    if (!matchData.matchRank || matchData.matchRank === "") {
+      matchData.matchRank = "UNRANKED";
+    } else {
+      // Convert to uppercase for standardization
+      matchData.matchRank = String(matchData.matchRank).toUpperCase();
+      
+      // Validate against known ranks
+      if (!RANKS.includes(matchData.matchRank)) {
+        matchData.matchRank = "UNRANKED";
+      }
+    }
+
+    // Ensure matchScore is a number between 0-1
+    if (matchData.matchScore !== undefined && matchData.matchScore !== null) {
+      matchData.matchScore = parseFloat(matchData.matchScore);
+      
+      // Normalize score if greater than 1 (assuming percentage)
+      if (matchData.matchScore > 1) {
+        matchData.matchScore = matchData.matchScore / 100;
+      }
+    } else {
+      matchData.matchScore = 0;
+    }
+
+    return matchData as Match;
   };
 
-  // Function to load and cache profile images
-  const loadProfileImage = async (userId: string, imageFilename?: string) => {
-    if (!userInfo || !authTokens?.idToken) return null;
+  // Clean up image URL for consistent caching
+  const cleanImageUrl = (url: string): string => {
+    // If it's already a URL, remove any query parameters for better caching
+    if (url.startsWith('http') && url.includes('?')) {
+      return url.split('?')[0];
+    }
+    return url;
+  };
 
-    // Return from cache if available
-    const cacheKey = `${userId}-${imageFilename || 'default'}`;
+  // Load profile image
+  const loadProfileImage = useCallback(async (userId: string, imageFilename?: string): Promise<string | null> => {
+    if (!imageFilename) return null;
+    if (!userInfo || !authTokens?.idToken) return null;
+    
+    // Clean up the filename for consistent caching
+    const cleanFilename = imageFilename.startsWith('http') 
+      ? cleanImageUrl(imageFilename)
+      : imageFilename;
+    
+    // Create cache key
+    const cacheKey = `${userId}-${cleanFilename}`;
+    
+    // Check if already in cache
     if (profileImagesCache[cacheKey]) {
-      console.log(`[AppDataContext] Returning cached image for ${cacheKey}`);
+      console.log(`Using cached image for ${userId}: ${cleanFilename}`);
       return profileImagesCache[cacheKey];
     }
-
+    
+    // If it's already a URL, just cache and return it
+    if (imageFilename.startsWith('http')) {
+      const cleanedUrl = cleanImageUrl(imageFilename);
+      setProfileImagesCache(prev => ({
+        ...prev,
+        [cacheKey]: cleanedUrl
+      }));
+      return cleanedUrl;
+    }
+    
     try {
-      console.log(`[AppDataContext] Loading image for ${cacheKey}`);
-
-      // Create minimal user data object needed for GetUserProfileImage
-      const userData = {
+      // Create user object for API call
+      const userObj = {
         userName: userId,
-        imageFilenames: imageFilename ? [imageFilename] : []
-      };
-
-      const imageUrl = await GetUserProfileImage(userInfo, authTokens.idToken, userData as any);
-
-      if (imageUrl) {
-        // Cache the result
+        imageFilenames: [imageFilename]
+      } as unknown as User;
+      
+      // Get image URLs
+      console.log(`Fetching image URL for ${userId}: ${imageFilename}`);
+      const urls = await GetUserProfileImages(userInfo, authTokens.idToken, userObj);
+      
+      // If we got URLs back, cache and return the first one
+      if (Array.isArray(urls) && urls.length > 0) {
+        const cleanedUrl = cleanImageUrl(urls[0]);
         setProfileImagesCache(prev => ({
           ...prev,
-          [cacheKey]: imageUrl
+          [cacheKey]: cleanedUrl
         }));
-        console.log(`[AppDataContext] Cached image for ${cacheKey}`);
-        return imageUrl;
+        
+        // Also store the URL under the original filename for easier lookup
+        if (cleanedUrl !== cleanFilename) {
+          setProfileImagesCache(prev => ({
+            ...prev,
+            [`${userId}-${imageFilename}`]: cleanedUrl
+          }));
+        }
+        
+        return cleanedUrl;
       }
-
-      return null;
     } catch (error) {
-      console.error(`[AppDataContext] Error loading image for ${cacheKey}:`, error);
-      return null;
+      console.error('Error loading profile image:', error);
     }
-  };
+    
+    // Fallback to direct S3 URL construction
+    const fallbackUrl = `https://ensoulee-user-images.s3.amazonaws.com/${userId}/${imageFilename}`;
+    setProfileImagesCache(prev => ({
+      ...prev,
+      [cacheKey]: fallbackUrl
+    }));
+    return fallbackUrl;
+  }, [userInfo, authTokens, profileImagesCache]);
 
-  // Function to fetch matches
-  const fetchMatches = async () => {
-    if (!userInfo || !authTokens?.idToken) return;
-
-    // Prevent duplicate calls
-    if (isFetchingMatches.current) {
-      console.log("[AppDataContext] Matches fetch already in progress, skipping");
+  // Refresh matches
+  const refreshMatches = useCallback(async (): Promise<void> => {
+    if (!userInfo || !authTokens?.idToken) {
+      console.log('No authentication info available, skipping matches fetch');
       return;
     }
 
-    isFetchingMatches.current = true;
-    console.log("[AppDataContext] Fetching matches");
-
     try {
       setIsLoading(true);
+      
       const data = await GetUserMatches(userInfo, authTokens.idToken);
+      console.log('Matches data received:', data?.length || 0);
+
       if (data && Array.isArray(data)) {
-        console.log(`[AppDataContext] Got ${data.length} matches`);
-        setMatches(data);
+        // Process the matches data
+        const processedMatches = data.map((match: any) => processMatchData(match));
+        
+        if (processedMatches.length > 0) {
+          setMatches(processedMatches);
+          
+          // Preload profile images for faster rendering
+          const preloadPromises = processedMatches.map(match => {
+            if (match.matchedUser?.profileImage) {
+              return loadProfileImage(match.matchedUser.id, match.matchedUser.profileImage)
+                .catch(() => null); // Silently continue if image fetch fails
+            }
+            return Promise.resolve(null);
+          });
+          
+          // Wait for all image preloading to finish
+          await Promise.all(preloadPromises);
+        } else {
+          setMatches([]);
+        }
+      } else {
+        console.log('No data returned from API');
+        setMatches([]);
       }
     } catch (error) {
       console.error('Error fetching matches:', error);
     } finally {
       setIsLoading(false);
-      isFetchingMatches.current = false;
     }
-  };
+  }, [userInfo, authTokens, loadProfileImage]);
 
-  // Function to fetch potential matches
-  const fetchPotentialMatches = async () => {
-    if (!userInfo || !authTokens?.idToken) return;
-
-    // Prevent duplicate calls
-    if (isFetchingPotentials.current) {
-      console.log("[AppDataContext] Potential matches fetch already in progress, skipping");
+  // Refresh potential matches
+  const refreshPotentialMatches = useCallback(async (): Promise<void> => {
+    if (!userInfo || !authTokens?.idToken) {
+      console.log('No authentication info available, skipping potential matches fetch');
       return;
     }
-
-    isFetchingPotentials.current = true;
-    console.log("[AppDataContext] Fetching potential matches");
-
+    
     try {
       setIsLoading(true);
+      
       const data = await GetPotentialMatches(userInfo, authTokens.idToken);
+      console.log('Potential matches received:', data?.length || 0);
+      
       if (data && Array.isArray(data)) {
-        console.log(`[AppDataContext] Got ${data.length} potential matches`);
         setPotentialMatches(data);
+        
+        // Cache any presigned image URLs
+        data.forEach((profile: any) => {
+          if (profile.presignedImageUrls && Array.isArray(profile.presignedImageUrls) && profile.presignedImageUrls.length > 0) {
+            // These URLs are already presigned, so just cache them
+            profile.presignedImageUrls.forEach((url: string, index: number) => {
+              if (url) {
+                if (url.startsWith('http')) {
+                  const cleanedUrl = cleanImageUrl(url);
+                  const cacheKey = `${profile.userName}-image-${index}`;
+                  setProfileImagesCache(prev => ({
+                    ...prev,
+                    [cacheKey]: cleanedUrl
+                  }));
+                }
+              }
+            });
+          }
+        });
+      } else {
+        console.log('No potential matches returned from API');
+        setPotentialMatches([]);
       }
     } catch (error) {
       console.error('Error fetching potential matches:', error);
     } finally {
       setIsLoading(false);
-      isFetchingPotentials.current = false;
     }
-  };
+  }, [userInfo, authTokens]);
 
-  // Function to refresh all data at once
-  const refreshAllData = async () => {
-    if (!userInfo || !authTokens?.idToken) return;
-
-    // Prevent duplicate calls
-    if (isInitializing.current) {
-      console.log("[AppDataContext] Data refresh already in progress, skipping");
+  // Refresh all data
+  const refreshAllData = useCallback(async (): Promise<void> => {
+    if (!userInfo || !authTokens?.idToken) {
       return;
     }
-
-    isInitializing.current = true;
-    console.log("[AppDataContext] Refreshing all data");
-
+    
     try {
-      showLoading('Refreshing data...');
+      showLoading('Loading your data...');
       setIsLoading(true);
-
-      // Load all data in parallel for efficiency
+      
+      // Run both refreshes in parallel for better performance
       await Promise.all([
-        loadUserProfileImage(),
-        fetchMatches(),
-        fetchPotentialMatches()
+        refreshMatches(),
+        refreshPotentialMatches()
       ]);
     } catch (error) {
-      console.error('Error refreshing data:', error);
+      console.error('Error refreshing all data:', error);
+      Alert.alert('Error', 'Failed to load your data');
     } finally {
-      setIsLoading(false);
       hideLoading();
-      isInitializing.current = false;
+      setIsLoading(false);
     }
-  };
+  }, [userInfo, authTokens, refreshMatches, refreshPotentialMatches, showLoading, hideLoading]);
 
-  // Initialize the data on first component mount
+  // Load initial data when component mounts and auth is available
   useEffect(() => {
-    const initializeData = async () => {
-      if (!userInfo || !authTokens?.idToken) {
-        setIsInitialized(true);
-        return;
-      }
+    if (userInfo && authTokens?.idToken && !initializedRef.current) {
+      // Mark as initialized to prevent duplicate loads
+      initializedRef.current = true;
+      
+      // Set immediate loading state
+      setIsLoading(true);
 
-      if (!isInitialized && !isInitializing.current) {
-        isInitializing.current = true;
-        console.log("[AppDataContext] Initializing app data");
-
-        try {
-          showLoading('Loading your profile...');
-
-          // Check if we need to load data
-          const shouldLoadImage = !userProfileImage;
-          const shouldLoadMatches = matches.length === 0;
-          const shouldLoadPotentials = potentialMatches.length === 0;
-
-          // Only load what we need
-          const promises = [];
-          if (shouldLoadImage) promises.push(loadUserProfileImage());
-          if (shouldLoadMatches) promises.push(fetchMatches());
-          if (shouldLoadPotentials) promises.push(fetchPotentialMatches());
-
-          if (promises.length > 0) {
-            await Promise.all(promises);
-          }
-        } catch (error) {
-          console.error('Error initializing app data:', error);
-        } finally {
-          setIsInitialized(true);
-          hideLoading();
-          isInitializing.current = false;
-        }
-      }
-    };
-
-    initializeData();
-    // Intentionally empty dependency array - we only want to run this once
-  }, []);
-
-  // Update data when authentication changes
-  useEffect(() => {
-    if (userInfo && authTokens?.idToken && isInitialized) {
-      // Wait a bit to avoid race conditions
-      const timer = setTimeout(() => {
-        refreshAllData();
-      }, 500);
-
-      return () => clearTimeout(timer);
+      // Start eager initialization of all data
+      console.log('🔄 Initializing app data context...');
+      
+      // Run data loading in parallel
+      Promise.all([
+        refreshMatches(),
+        refreshPotentialMatches()
+      ])
+      .then(() => {
+        console.log('✅ App data context initialized successfully');
+      })
+      .catch((error) => {
+        console.error('❌ Error initializing app data:', error);
+      });
     }
-  }, [userInfo?.userName, authTokens?.idToken]);
+  }, [userInfo, authTokens?.idToken, refreshMatches, refreshPotentialMatches]);
 
-  // Return the context with new functions and cache added
   return (
-    <AppDataContext.Provider
-      value={{
-        matches,
-        potentialMatches,
-        userProfileImage,
-        profileImagesCache, // Add cache to context
-        loadProfileImage, // Add function to context
-        refreshMatches: fetchMatches,
-        refreshPotentialMatches: fetchPotentialMatches,
-        refreshAllData,
-        isLoading
-      }}
-    >
+    <AppDataContext.Provider value={{
+      matches,
+      potentialMatches,
+      userProfileImage,
+      profileImagesCache,
+      loadProfileImage,
+      refreshMatches,
+      refreshPotentialMatches,
+      refreshAllData,
+      isLoading
+    }}>
       {children}
     </AppDataContext.Provider>
   );
 };
 
-// Export the hook to use the context
-export const useAppData = () => {
-  const context = useContext(AppDataContext);
-  if (context === undefined) {
-    throw new Error('useAppData must be used within an AppDataProvider');
-  }
-  return context;
-};
+// Custom hook to use the app data context
+export const useAppData = () => useContext(AppDataContext);

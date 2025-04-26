@@ -19,18 +19,17 @@ const setupDatabase = async (db: SQLiteDatabase) => {
   }
 };
 
-
 export default function MessagesLayout() {
   return (
     <SQLiteProvider databaseName="ensoulee_chats.db" onInit={setupDatabase}>
       <View style={styles.container}>
         <Stack
           screenOptions={{
-            headerShown: false,
+            headerShown: false, // Never show the Stack header
             contentStyle: { backgroundColor: '#121212' },
             animation: 'slide_from_right',
             animationDuration: 300,
-            // Use 'containedModal' or 'containedTransparentModal' for smoother transitions
+            // Use 'containedModal' for smoother transitions
             presentation: 'containedTransparentModal',
             // Add gesture handling for iOS
             gestureEnabled: true,

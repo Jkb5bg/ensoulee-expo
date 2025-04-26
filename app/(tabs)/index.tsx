@@ -39,17 +39,6 @@ export default function IndexScreen() {
     ? potentialMatches[currentProfileIndex] 
     : null;
 
-  // Navigate to settings
-  const navigateToSettings = () => {
-    router.push('/settings');
-  }
-
-  // Logout and redirect
-  const logoutAndRedirect = () => {
-    logout();
-    router.replace("/(onboarding)");
-  }
-
   // Handle swipe action
   const handleSwipe = async (direction: 'left' | 'right') => {
     if (!currentProfile || !userInfo || !authTokens?.idToken) return;

@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Image,
   RefreshControl,
-  Alert,
   Dimensions,
   SafeAreaView,
   Platform
@@ -17,194 +16,80 @@ import { router } from 'expo-router';
 import { useAuth } from '@/components/AuthContext';
 import { StatusBar } from 'expo-status-bar';
 import MatchType from '@/types/matchType';
-import { GetUserMatches } from '@/api/GetUserMatches';
-import { GetUserProfileImages } from '@/api/GetUserProfileImages';
 import { useAppContext } from '@/components/TabsContext';
 import NotificationsIcon from "@/components/icons/NotificationsIcon";
 import SettingsIcon from "@/components/icons/SettingsIcon";
-import User from '@/types/user';
+import { useAppData } from '@/components/AppDataContext';
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 
-const { width } = Dimensions.get('window');
-
-// TODO: Fix up the message preview so it updates automatically, possibly with a new message indicator.
-
 export default function Messages() {
   const { user, userInfo, authTokens } = useAuth();
-  const [matches, setMatches] = useState<MatchType[]>([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const token = authTokens?.idToken || '';
   const { setCustomHeader } = useAppContext();
   const { width, height } = Dimensions.get('window');
   const isSmallDevice = height < 700;
   const isLargeDevice = height > 800;
+  
+  // Get data from our shared context
+  const { matches, refreshMatches, isLoading: isDataLoading } = useAppData();
 
-  // Simulate loading for a short period to ensure screen is dark
-  useEffect(() => {
-    // This ensures the screen stays dark during the loading process
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 500); // Half second delay to prevent flashing
-    
-    return () => clearTimeout(timer);
-  }, []);
+  console.log(`[Messages] Matches count: ${matches?.length}`);
 
   // Make sure custom header is off when this screen mounts
   useEffect(() => {
     setCustomHeader(false);
+  }, [setCustomHeader]);
+
+  // Fetch matches from context if needed on component mount
+  useEffect(() => {
+    if (matches.length === 0 && !isDataLoading && userInfo && authTokens?.idToken) {
+      console.log('[Messages] Fetching matches on component mount');
+      refreshMatches();
+    }
+  }, [matches.length, isDataLoading, refreshMatches, userInfo, authTokens]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshMatches();
+    setRefreshing(false);
+  }, [refreshMatches]);
+
+  // Simple function to get image URL - no cleaning, just use what's provided
+  const getImageUrl = useCallback((match: MatchType) => {
+    if (!match.matchedUser) return DEFAULT_AVATAR;
+    
+    const profileImage = match.matchedUser.profileImage;
+    
+    if (!profileImage) return DEFAULT_AVATAR;
+    
+    // Simply use the URL directly as provided by the API
+    return { uri: profileImage };
   }, []);
 
-  // Fetch matches using your API function
-  const fetchMatches = useCallback(async () => {
-    if (!user || !userInfo) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      
-      if (!token) {
-        throw new Error('No token available');
-      }
-
-      // Use your API function
-      const matchesData = await GetUserMatches(userInfo, token);
-      
-      if (matchesData) {
-        setMatches(matchesData as unknown as MatchType[]);
-
-        // Load images after setting matches
-        if (Array.isArray(matchesData) && matchesData.length > 0) {
-          matchesData.forEach((match: any) => {
-            if (match.matchedUser?.profileImage) {
-              loadImageUrl(match.matchedUser.id, match.matchedUser.profileImage);
-            }
-          });
-        }
-      } else {
-        // Handle the case when the API returns undefined
-        setMatches([]);
-      }
-    } catch (error) {
-      console.error('Error fetching matches:', error);
-      Alert.alert('Error', 'Failed to load your matches');
-      setMatches([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [user, userInfo]);
-
-  // Load image URL function
-  const loadImageUrl = useCallback(
-    async (userId: string, profileImage: string) => {
-      if (!userInfo) {
-        // nothing to do if we don’t have token info
-        return DEFAULT_AVATAR;
-      }
-      // 1) If it's already an HTTP URL, just stash it
-      if (profileImage.startsWith("http")) {
-        setImageUrls(prev => ({ ...prev, [userId]: profileImage }));
-        return profileImage;
-      }
-
-      // 2) Otherwise fall back to calling your image API
-      try {
-        const userDataForImage = {
-          userName: userId,               
-          imageFilenames: [profileImage], 
-        } as User;
-
-        const urls = await GetUserProfileImages(userInfo, token, userDataForImage);
-        console.log(urls);
-        const first = Array.isArray(urls) && urls.length > 0 ? urls[0] : null;
-
-        if (first) {
-          setImageUrls(prev => ({ ...prev, [userId]: first }));
-          return first;
-        }
-      } catch (e) {
-        console.error("Image fetch failed:", e);
-      }
-
-      // 3) Finally, fallback to the raw S3 path pattern
-      const fallback = `https://ensoulee-user-images.s3.amazonaws.com/${userId}/${profileImage}`;
-      setImageUrls(prev => ({ ...prev, [userId]: fallback }));
-      return fallback;
-    },
-    [userInfo, token]
-  );
-
-  // Helper function to get image URL from local state
-  const getImageUrl = useCallback((userId: string, imageFilename?: string) => {
-    if (!imageFilename) return DEFAULT_AVATAR;
-
-    // Extract the actual filename if it's a full URL
-    const cleanFilename = imageFilename.split('/').pop()?.split('?')[0] || imageFilename;
-
-    // Check if we have the URL cached in our local state
-    return imageUrls[`${userId}-${cleanFilename}`] || DEFAULT_AVATAR;
-  }, [imageUrls]);
-
   const navigateToChat = (match: MatchType) => {
-    // Get image URL
-    let imageUrl = null;
+    if (!match.matchedUser) return;
     
-    // First check if we have a cached URL
-    if (imageUrls[match.matchedUser.id]) {
-      imageUrl = imageUrls[match.matchedUser.id];
-    } 
-    // Otherwise, use the profile image from the match data
-    else if (match.matchedUser.profileImage) {
-      imageUrl = match.matchedUser.profileImage;
-    }
-    
-    console.log(`Navigating to chat with ${match.matchedUser.name}, image URL length:`, imageUrl ? imageUrl.length : 0);
+    // Simply pass the profile image URL as-is to the chat screen
+    const profileImage = match.matchedUser.profileImage || '';
     
     // Set the custom header BEFORE navigation to prevent flickering
     setCustomHeader(true);
     
     // Navigate to chat screen with all params
-    setTimeout(() => {
-      router.push({
-        pathname: "/messages/chat",
-        params: {
-          matchId: match.matchId,
-          userId: match.matchedUser.id,
-          userName: match.matchedUser.name,
-          profileImage: imageUrl || ''
-        }
-      });
-    }, 10);
-  };
-
-  // Fetch matches on component mount
-  useEffect(() => {
-    if (user && userInfo) {
-      fetchMatches();
-    }
-  }, [user, userInfo, fetchMatches]);
-
-  // Load images for matches
-  useEffect(() => {
-    matches.forEach(match => {
-      if (match.matchedUser?.profileImage) {
-        loadImageUrl(match.matchedUser.id, match.matchedUser.profileImage);
+    router.push({
+      pathname: "/messages/chat",
+      params: {
+        matchId: match.matchId,
+        userId: match.matchedUser.id,
+        userName: match.matchedUser.name,
+        profileImage: profileImage
       }
     });
-  }, [matches, loadImageUrl]);
+  };
 
   // Render match list item
   const renderMatchItem = ({ item }: { item: MatchType }) => {
-    // Create a default image URL regardless of whether there's a profile image
-    const uri = imageUrls[item.matchedUser.id] || DEFAULT_AVATAR;
-
-    
     return (
       <TouchableOpacity
         style={styles.matchItem}
@@ -212,15 +97,14 @@ export default function Messages() {
       >
         <View style={styles.matchItemContent}>
           <Image
-          source={ typeof uri === "string" && uri.startsWith("http")
-            ? { uri }
-            : DEFAULT_AVATAR
-          }
-          style={styles.avatar}
-          onError={e => console.warn("Image failed:", e.nativeEvent.error)}
+            source={getImageUrl(item)}
+            style={styles.avatar}
+            onError={() => {
+              console.warn(`[Messages] Image failed for ${item.matchedUser?.name || 'unknown'}`);
+            }}
           />
           <View style={styles.matchDetails}>
-            <Text style={styles.matchName}>{item.matchedUser.name}</Text>
+            <Text style={styles.matchName}>{item.matchedUser?.name || 'Unknown'}</Text>
             {item.lastMessage && (
               <Text style={styles.lastMessage} numberOfLines={1}>
                 {item.lastMessage.content}
@@ -303,7 +187,7 @@ export default function Messages() {
       </View>
     </SafeAreaView>
       
-      {loading && matches.length === 0 ? (
+      {(isDataLoading && matches.length === 0) ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#f44d7b" />
         </View>
@@ -315,10 +199,7 @@ export default function Messages() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                fetchMatches();
-              }}
+              onRefresh={handleRefresh}
               tintColor="#f44d7b"
             />
           }
@@ -370,6 +251,7 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 25,
     marginRight: 12,
+    backgroundColor: '#333', // Show background while loading
   },
   matchDetails: {
     flex: 1,

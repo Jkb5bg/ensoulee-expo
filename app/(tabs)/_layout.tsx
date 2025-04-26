@@ -16,8 +16,8 @@ import MessageIcon from '@/components/icons/MessageIcon';
 import UsersIcon from '@/components/icons/UsersIcon';
 import SettingsIcon from '@/components/icons/SettingsIcon';
 import NotificationsIcon from '@/components/icons/NotificationsIcon';
-import { useAppContext } from '@/components/TabsContext';
-import { AppProvider } from '@/components/TabsContext';
+import { useAppContext, AppProvider } from '@/components/TabsContext';
+import { AppDataProvider } from '@/components/AppDataContext';
 import { router } from 'expo-router';
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
@@ -70,133 +70,136 @@ export default function TabsLayout() {
   };
 
   return (
-    <Tabs
-      screenOptions={({ route }) => ({
-        // Tab bar icon configuration
-        tabBarIcon: ({ focused }) => {
-          const color = focused ? 'rgba(244, 77, 123, 1)' : 'gray';
+    <AppDataProvider>
+      <Tabs
+        screenOptions={({ route }) => ({
+          // Tab bar icon configuration
+          lazy: false,
+          tabBarIcon: ({ focused }) => {
+            const color = focused ? 'rgba(244, 77, 123, 1)' : 'gray';
+            
+            if (route.name === 'index') {
+              return <SearchIcon width={24} height={24} color={color} />;
+            } else if (route.name === 'matches') {
+              return <UsersIcon width={24} height={24} color={color} />;
+            } else if (route.name === 'messages') {
+              return <MessageIcon width={24} height={24} color={color} />;
+            }
+            
+            return null;
+          },
+          // Tab bar styling
+          tabBarActiveTintColor: 'rgba(244, 77, 123, 1)',
+          tabBarInactiveTintColor: 'gray',
+          tabBarLabel: ({ focused, children }) => {
+            let label;
+            if (route.name === 'index') label = 'Discover';
+            else if (route.name === 'matches') label = 'Matches';
+            else if (route.name === 'messages') label = 'Messages';
+            else label = children;
+            
+            return (
+              <Text style={{ 
+                color: focused ? 'rgba(244, 77, 123, 1)' : 'gray', 
+                fontSize: 12 
+              }}>
+                {label}
+              </Text>
+            );
+          },
+          tabBarStyle: {
+            backgroundColor: 'rgba(31, 34, 35, 1)', 
+            paddingBottom: 10,
+            paddingTop: 10,
+            height: 70,
+            borderTopWidth: 0,
+            elevation: 10,
+          },
+          tabBarItemStyle: {
+            paddingVertical: 5,
+          },
           
-          if (route.name === 'index') {
-            return <SearchIcon width={24} height={24} color={color} />;
-          } else if (route.name === 'matches') {
-            return <UsersIcon width={24} height={24} color={color} />;
-          } else if (route.name === 'messages') {
-            return <MessageIcon width={24} height={24} color={color} />;
-          }
-          
-          return null;
-        },
-        // Tab bar styling
-        tabBarActiveTintColor: 'rgba(244, 77, 123, 1)',
-        tabBarInactiveTintColor: 'gray',
-        tabBarLabel: ({ focused, children }) => {
-          let label;
-          if (route.name === 'index') label = 'Discover';
-          else if (route.name === 'matches') label = 'Matches';
-          else if (route.name === 'messages') label = 'Messages';
-          else label = children;
-          
-          return (
-            <Text style={{ 
-              color: focused ? 'rgba(244, 77, 123, 1)' : 'gray', 
-              fontSize: 12 
-            }}>
-              {label}
-            </Text>
-          );
-        },
-        tabBarStyle: {
-          backgroundColor: 'rgba(31, 34, 35, 1)', 
-          paddingBottom: 10,
-          paddingTop: 10,
-          height: 70,
-          borderTopWidth: 0,
-          elevation: 10,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 5,
-        },
-        
-        // FIXED: Always hide the header for messages tab
-        // This ensures consistent navigation without jumps
-        headerShown: route.name !== 'messages',
-        header: ({ navigation, route, options }) => {
-          let title;
-          if (route.name === 'index') title = 'Discover';
-          else if (route.name === 'matches') title = 'Matches';
-          else if (route.name === 'messages') title = 'Messages';
-          
-          return (
-            <SafeAreaView style={[styles.safeArea]}>
-              <View style={[
-                styles.headerContainer, 
-                { 
-                  height: headerHeight,
-                  paddingTop: headerPaddingTop
-                }
-              ]}>
+          // FIXED: Always hide the header for messages tab
+          // This ensures consistent navigation without jumps
+          headerShown: route.name !== 'messages' && !customHeader,
+          header: ({ navigation, route, options }) => {
+            let title;
+            if (route.name === 'index') title = 'Discover';
+            else if (route.name === 'matches') title = 'Matches';
+            else if (route.name === 'messages') title = 'Messages';
+            
+            return (
+              <SafeAreaView style={[styles.safeArea]}>
                 <View style={[
-                  styles.headerContent,
-                  { marginTop: contentMarginTop }
+                  styles.headerContainer, 
+                  { 
+                    height: headerHeight,
+                    paddingTop: headerPaddingTop
+                  }
                 ]}>
-                  <View style={styles.headerLeft}>
-                    <Image
-                      source={DEFAULT_AVATAR}
-                      style={[
-                        styles.profileIcon,
-                        {
-                          width: profileIconSize,
-                          height: profileIconSize,
-                          borderRadius: profileIconSize / 2
-                        }
-                      ]}
-                      resizeMode="cover"
-                    />
-                  </View>
-                  
                   <View style={[
-                    styles.headerCenter,
-                    { paddingLeft: width * 0.05 } // Dynamic padding based on screen width
+                    styles.headerContent,
+                    { marginTop: contentMarginTop }
                   ]}>
-                    <Text style={[
-                      styles.headerTitle,
-                      { fontSize: titleFontSize }
+                    <View style={styles.headerLeft}>
+                      <Image
+                        source={DEFAULT_AVATAR}
+                        style={[
+                          styles.profileIcon,
+                          {
+                            width: profileIconSize,
+                            height: profileIconSize,
+                            borderRadius: profileIconSize / 2
+                          }
+                        ]}
+                        resizeMode="cover"
+                      />
+                    </View>
+                    
+                    <View style={[
+                      styles.headerCenter,
+                      { paddingLeft: width * 0.05 } // Dynamic padding based on screen width
                     ]}>
-                      {title}
-                    </Text>
-                  </View>
-                  
-                  <View style={styles.headerRight}>
-                    <TouchableOpacity 
-                      style={styles.headerIconButton} 
-                      onPress={navigateToSettings}
-                    >
-                      <SettingsIcon 
-                        width={iconSize} 
-                        height={iconSize} 
-                        color="#F44D7B" 
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.headerIconButton}>
-                      <NotificationsIcon 
-                        width={iconSize} 
-                        height={iconSize} 
-                        color="#F44D7B" 
-                      />
-                    </TouchableOpacity>
+                      <Text style={[
+                        styles.headerTitle,
+                        { fontSize: titleFontSize }
+                      ]}>
+                        {title}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.headerRight}>
+                      <TouchableOpacity 
+                        style={styles.headerIconButton} 
+                        onPress={navigateToSettings}
+                      >
+                        <SettingsIcon 
+                          width={iconSize} 
+                          height={iconSize} 
+                          color="#F44D7B" 
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.headerIconButton}>
+                        <NotificationsIcon 
+                          width={iconSize} 
+                          height={iconSize} 
+                          color="#F44D7B" 
+                        />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
-              </View>
-            </SafeAreaView>
-          );
-        }
-      })}
-    >
-      <Tabs.Screen name="index" />
-      <Tabs.Screen name="matches" />
-      <Tabs.Screen name="messages" />
-      {/* Remove the settings tab here */}
-    </Tabs>
+              </SafeAreaView>
+            );
+          }
+        })}
+      >
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="matches" />
+        <Tabs.Screen name="messages" />
+        {/* Remove the settings tab here */}
+      </Tabs>
+    </AppDataProvider>
   );
 }
 

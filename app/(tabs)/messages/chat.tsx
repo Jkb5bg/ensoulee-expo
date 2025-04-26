@@ -65,6 +65,7 @@ export default function ChatScreen() {
   const userId = params.userId as string;
   const profileImage = params.profileImage as string;
   const messageCheckTimestampRef = useRef<number | null>(null);
+  const { loadProfileImage, profileImagesCache } = useAppData();
   console.log('[ChatScreen] route param profileImage:', profileImage);
 
 
@@ -91,52 +92,97 @@ export default function ChatScreen() {
   const [processedImageUrl, setProcessedImageUrl] = useState<string | null>(null);
   const [imageLoadError, setImageLoadError] = useState(false);
 
-  // Process profile image when it changes
+  const loadImageWithAPI = () => {
+    if (!profileImage || !userInfo || !token || !userId) return;
+    
+    console.log("[ChatScreen] Fetching profile image with API call:", profileImage);
+    
+    (async () => {
+      try {
+        // Create a proper user object for the API call
+        const userObj = {
+          userName: userId,
+          imageFilenames: [profileImage]
+        } as unknown as User;
+        
+        const urls = await GetUserProfileImages(userInfo, token, userObj);          
+        console.log("[ChatScreen] Received image URLs:", urls);
+        
+        const first = Array.isArray(urls) && urls.length > 0 ? urls[0] : null;
+        if (first) {
+          const cleaned = cleanPresignedUrl(first);
+          console.log("[ChatScreen] Setting processed image URL to:", cleaned);
+          setProcessedImageUrl(cleaned);
+        }
+      } catch (e) {
+        console.warn('[ChatScreen] Chat header avatar fetch failed:', e);
+      }
+    })();
+  };
+
   useEffect(() => {
     console.log("[ChatScreen] Processing profile image - length:", profileImage ? profileImage.length : 0);
     
-    if (profileImage && profileImage.trim() !== '') {
-      // Just pass the URL directly without any processing
-      setProcessedImageUrl(profileImage);
-      setImageLoadError(false);
-    } else {
+    if (!profileImage || profileImage.trim() === '') {
       console.log("[ChatScreen] No profile image provided, using default");
       setProcessedImageUrl(null);
+      setImageLoadError(false);
+      return;
     }
-  }, [profileImage]);
-
-  useEffect(() => {
-    // If we got a filename (not an http URL), pull the real presigned URL now
-    if (profileImage && 
-        profileImage.trim() !== '' && 
-        !profileImage.startsWith('http') && 
-        userInfo && token) {
-        
-      console.log("[ChatScreen] Fetching profile image for filename:", profileImage);
-      
-      (async () => {
-        try {
-          // Create a proper user object for the API call
-          const userObj = {
-            userName: userId,
-            imageFilenames: [profileImage]
-          } as unknown as User;
-          
-          const urls = await GetUserProfileImages(userInfo, token, userObj);          
-          console.log("[ChatScreen] Received image URLs:", urls);
-          
-          const first = Array.isArray(urls) && urls.length > 0 ? urls[0] : null;
-          if (first) {
-            const cleaned = cleanPresignedUrl(first);
-            console.log("[ChatScreen] Setting processed image URL to:", cleaned);
-            setProcessedImageUrl(cleaned);
+    
+    // Check if it's in the shared app cache first
+    if (userId) {
+      const cacheKey = `${userId}-${profileImage}`;
+      if (profileImagesCache[cacheKey]) {
+        console.log("[ChatScreen] Using shared cached image URL");
+        setProcessedImageUrl(profileImagesCache[cacheKey]);
+        setImageLoadError(false);
+        return;
+      }
+    }
+    
+    // If it's already a URL, use it directly
+    if (profileImage.startsWith('http')) {
+      try {
+        // Try to clean the URL by removing query params
+        const cleanUrl = cleanPresignedUrl(profileImage);
+        console.log("[ChatScreen] Using cleaned direct URL");
+        setProcessedImageUrl(cleanUrl);
+      } catch (e) {
+        // If that fails, use the original URL
+        console.log("[ChatScreen] Using original direct URL");
+        setProcessedImageUrl(profileImage);
+      }
+      setImageLoadError(false);
+      return;
+    }
+    
+    // If it's not a URL but we have the userId, load it from the shared context
+    if (userId) {
+      console.log("[ChatScreen] Loading from shared context");
+      loadProfileImage(userId, profileImage)
+        .then(url => {
+          if (url) {
+            console.log("[ChatScreen] Loaded URL from shared context:", url);
+            setProcessedImageUrl(url);
+            setImageLoadError(false);
+          } else {
+            console.log("[ChatScreen] Failed to load from shared context, falling back to API");
+            // Fall back to direct API call
+            loadImageWithAPI();
           }
-        } catch (e) {
-          console.warn('[ChatScreen] Chat header avatar fetch failed:', e);
-        }
-      })();
+        })
+        .catch(error => {
+          console.error("[ChatScreen] Error loading from shared context:", error);
+          loadImageWithAPI();
+        });
+      return;
     }
-  }, [profileImage, userInfo, token, userId]);
+    
+    // Last resort - use as is
+    setProcessedImageUrl(profileImage);
+    setImageLoadError(false);
+  }, [profileImage, userId, profileImagesCache, loadProfileImage]);
   
 
   // Add a search function

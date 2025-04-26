@@ -14,9 +14,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/components/AuthContext';
 import { useLoading } from '@/components/LoadingContext';
-import { GetUserMatches } from '@/api/GetUserMatches';
 import { router } from 'expo-router';
 import Match from '@/types/matchType';
+import { useAppData } from '@/components/AppDataContext';
 
 // Default avatar image
 const DEFAULT_AVATAR = require("@/assets/images/default-avatar.png");
@@ -25,9 +25,7 @@ const DEFAULT_AVATAR = require("@/assets/images/default-avatar.png");
 const RANKS = ["PLATINUM", "GOLD", "SILVER", "BRONZE", "UNRANKED"];
 
 export default function MatchesScreen() {
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [userProfileImage, setUserProfileImage] = useState<string | null>(null);
+  const { matches, refreshMatches, isLoading, profileImagesCache, loadProfileImage } = useAppData();
   const { authTokens, userInfo } = useAuth();
   const { showLoading, hideLoading } = useLoading();
   
@@ -48,9 +46,13 @@ export default function MatchesScreen() {
     return () => subscription.remove();
   }, []);
 
-
   // When navigating from matches.tsx or similar:
   const handleMatchPress = (match: Match): void => {
+    // Preload image if possible
+    if (match.matchedUser?.profileImage && match.matchedUser?.id) {
+      loadProfileImage(match.matchedUser.id, match.matchedUser.profileImage);
+    }
+
     router.push({
       pathname: "/profile",
       params: { 
@@ -64,6 +66,11 @@ export default function MatchesScreen() {
   };
 
   const handleMatchLongPress = (match: Match): void => {
+    // Preload image if possible
+    if (match.matchedUser?.profileImage && match.matchedUser?.id) {
+      loadProfileImage(match.matchedUser.id, match.matchedUser.profileImage);
+    }
+
     router.push({
       pathname: "/messages/chat",
       params: { 
@@ -75,120 +82,12 @@ export default function MatchesScreen() {
     });
   };
 
-  // Process match data to ensure consistent format
-  const processMatchData = (matchData: any): Match => {
-    // If matchedUser info is missing, create placeholder
-    if (!matchData.matchedUser) {
-      matchData.matchedUser = {
-        id: matchData.userName2 || `unknown-${matchData.id}`,
-        name: "Unknown User",
-        userName: matchData.userName2 || `unknown-${matchData.id}`,
-        profileImage: null
-      };
-    }
-
-    // Handle matchRank
-    if (!matchData.matchRank || matchData.matchRank === "") {
-      matchData.matchRank = "UNRANKED";
-    } else {
-      // Convert to uppercase for standardization
-      matchData.matchRank = String(matchData.matchRank).toUpperCase();
-      
-      // Validate against known ranks
-      if (!RANKS.includes(matchData.matchRank)) {
-        matchData.matchRank = "UNRANKED";
-      }
-    }
-
-    // Ensure matchScore is a number between 0-1
-    if (matchData.matchScore !== undefined && matchData.matchScore !== null) {
-      matchData.matchScore = parseFloat(matchData.matchScore);
-      
-      // Normalize score if greater than 1 (assuming percentage)
-      if (matchData.matchScore > 1) {
-        matchData.matchScore = matchData.matchScore / 100;
-      }
-    } else {
-      matchData.matchScore = 0;
-    }
-
-    return matchData as Match;
-  };
-
-  // Create sample matches for testing/when API fails
-  const createSampleMatches = (): Match[] => {
-    return Array(10).fill(0).map((_, index) => {
-      // Include unranked matches in the sample data
-      const rankIndex = index < 8 ? (index % (RANKS.length - 1)) : RANKS.length - 1;
-
-      return {
-        id: `sample-${index}`,
-        matchId: `sample-${index}`,
-        matchedUser: {
-          id: `user-${index}`,
-          name: `Sample Match ${index + 1}`,
-          userName: `user-${index}`,
-          profileImage: null
-        },
-        matchRank: RANKS[rankIndex],
-        matchScore: Math.random() * 0.5 + 0.5,
-        status: "ACTIVE",
-        createdAt: new Date().toISOString(),
-        lastMessage: {
-          content: "This is a sample message for testing",
-          timestamp: Date.now() - (index * 3600000), // Varying timestamps
-          senderId: index % 2 === 0 ? "user-" + index : "currentUser"
-        }
-      };
-    });
-  };
-
-  // Fetch matches from API
-  const fetchMatches = useCallback(async (): Promise<void> => {
-    if (!userInfo || !authTokens?.idToken) {
-      console.log('No authentication info available, skipping matches fetch');
-      setLoading(false);
-      setMatches(createSampleMatches());
-      return;
-    }
-
-    try {
-      showLoading('Loading your matches...');
-      
-      const data = await GetUserMatches(userInfo, authTokens.idToken);
-      console.log(data);
-      console.log('Matches data received:', data?.length || 0);
-
-      if (data && Array.isArray(data)) {
-        // Process the matches data
-        const processedMatches = data.map((match: any) => processMatchData(match));
-        
-        if (processedMatches.length > 0) {
-          setMatches(processedMatches);
-        } else {
-          // Fallback to sample data if no valid matches
-          setMatches(createSampleMatches());
-        }
-      } else {
-        console.log('No data returned from API, using sample data');
-        setMatches(createSampleMatches());
-      }
-    } catch (error) {
-      console.error('Error fetching matches:', error);
-      setMatches(createSampleMatches());
-    } finally {
-      setLoading(false);
-      hideLoading();
-    }
-  }, [userInfo, authTokens, showLoading, hideLoading]);
-
-  // Load data on component mount
+  // Fetch matches from AppDataContext on component mount if needed
   useEffect(() => {
-    // Only fetch if we don't already have matches
-    if (matches.length === 0) {
-      fetchMatches();
+    if (matches.length === 0 && !isLoading) {
+      refreshMatches();
     }
-  }, []);
+  }, [matches.length, isLoading, refreshMatches]);
 
   // Helper functions for UI rendering
   const formatMatchCreatedAt = (dateString: string | undefined): string => {
@@ -259,6 +158,32 @@ export default function MatchesScreen() {
     return message.substring(0, maxLength) + "...";
   };
 
+  // Get the appropriate image URL for a match
+  const getMatchImage = (match: Match): any => {
+    if (!match.matchedUser) return DEFAULT_AVATAR;
+    
+    const userId = match.matchedUser.id;
+    const profileImage = match.matchedUser.profileImage;
+    
+    if (!profileImage) return DEFAULT_AVATAR;
+    
+    // Check if it's already in the cache
+    const cacheKey = `${userId}-${profileImage}`;
+    if (profileImagesCache[cacheKey]) {
+      return { uri: profileImagesCache[cacheKey] };
+    }
+    
+    // If not in cache but it's a URL, use it directly
+    if (profileImage.startsWith('http')) {
+      return { uri: profileImage };
+    }
+    
+    // Otherwise use default while we load it
+    // Also trigger loading to get it into cache for next time
+    loadProfileImage(userId, profileImage);
+    return DEFAULT_AVATAR;
+  };
+
   // Render a single match item
   const renderMatchItem = ({ item }: { item: Match }): JSX.Element => (
     <TouchableOpacity
@@ -272,9 +197,7 @@ export default function MatchesScreen() {
         {/* Profile Image */}
         <View style={styles.imageContainer}>
           <Image
-            source={item.matchedUser?.profileImage
-              ? { uri: item.matchedUser.profileImage }
-              : DEFAULT_AVATAR}
+            source={getMatchImage(item)}
             style={styles.matchImage}
             resizeMode={"cover"}
           />
@@ -325,7 +248,7 @@ export default function MatchesScreen() {
   );
 
   // Show loading indicator while loading
-  if (loading) {
+  if (isLoading && matches.length === 0) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color={"#f44d7b"} />
@@ -342,7 +265,7 @@ export default function MatchesScreen() {
             <RNText style={styles.noMatchesText}>No matches found</RNText>
             <TouchableOpacity
               style={styles.refreshButton}
-              onPress={fetchMatches}
+              onPress={refreshMatches}
             >
               <RNText style={styles.refreshButtonText}>Refresh</RNText>
             </TouchableOpacity>
