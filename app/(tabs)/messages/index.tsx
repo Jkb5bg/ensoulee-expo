@@ -20,6 +20,7 @@ import { useAppContext } from '@/components/TabsContext';
 import NotificationsIcon from "@/components/icons/NotificationsIcon";
 import SettingsIcon from "@/components/icons/SettingsIcon";
 import { useAppData } from '@/components/AppDataContext';
+import { Buffer } from 'buffer';
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 
@@ -67,23 +68,30 @@ export default function Messages() {
     return { uri: profileImage };
   }, []);
 
+
+
   const navigateToChat = (match: MatchType) => {
     if (!match.matchedUser) return;
     
-    // Simply pass the profile image URL as-is to the chat screen
+    // Get the profile image URL
     const profileImage = match.matchedUser.profileImage || '';
     
-    // Set the custom header BEFORE navigation to prevent flickering
+    // Encode the URL to make it safe for navigation params
+    const encodedProfileImage = encodeURIComponent(profileImage);
+    
+    console.log(`[Messages] Navigating to chat with encoded profileImage`);
+    
+    // Set the custom header BEFORE navigation
     setCustomHeader(true);
     
-    // Navigate to chat screen with all params
+    // Navigate with the encoded URL
     router.push({
       pathname: "/messages/chat",
       params: {
         matchId: match.matchId,
         userId: match.matchedUser.id,
         userName: match.matchedUser.name,
-        profileImage: profileImage
+        profileImage: encodedProfileImage
       }
     });
   };

@@ -5,11 +5,9 @@ import { useAuth } from './AuthContext';
 import { useLoading } from './LoadingContext';
 import { GetPotentialMatches } from '@/api/GetPotentialMatches';
 import { GetUserMatches } from '@/api/GetUserMatches';
-import { GetUserProfileImages } from '@/api/GetUserProfileImages';
 import AppDataContextType from '@/types/appDataContextType';
 import Profile from '@/types/profile';
 import Match from '@/types/matchType';
-import User from '@/types/user';
 
 // Create context with default values
 const AppDataContext = createContext<AppDataContextType>({
@@ -35,6 +33,7 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   // Prevent duplicate initializations
   const initializedRef = useRef<boolean>(false);
+  const isRefreshingRef = useRef<boolean>(false);
   
   // Get auth context
   const { userInfo, authTokens } = useAuth();
@@ -82,85 +81,13 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return matchData as Match;
   };
 
-  // Clean up image URL for consistent caching
-  const cleanImageUrl = (url: string): string => {
-    // If it's already a URL, remove any query parameters for better caching
-    if (url.startsWith('http') && url.includes('?')) {
-      return url.split('?')[0];
-    }
-    return url;
-  };
-
-  // Load profile image
-  const loadProfileImage = useCallback(async (userId: string, imageFilename?: string): Promise<string | null> => {
-    if (!imageFilename) return null;
-    if (!userInfo || !authTokens?.idToken) return null;
+  // Load profile image - simplified to just return the provided URL
+  const loadProfileImage = useCallback(async (userId: string, imageUrl?: string): Promise<string | null> => {
+    if (!imageUrl) return null;
     
-    // Clean up the filename for consistent caching
-    const cleanFilename = imageFilename.startsWith('http') 
-      ? cleanImageUrl(imageFilename)
-      : imageFilename;
-    
-    // Create cache key
-    const cacheKey = `${userId}-${cleanFilename}`;
-    
-    // Check if already in cache
-    if (profileImagesCache[cacheKey]) {
-      console.log(`Using cached image for ${userId}: ${cleanFilename}`);
-      return profileImagesCache[cacheKey];
-    }
-    
-    // If it's already a URL, just cache and return it
-    if (imageFilename.startsWith('http')) {
-      const cleanedUrl = cleanImageUrl(imageFilename);
-      setProfileImagesCache(prev => ({
-        ...prev,
-        [cacheKey]: cleanedUrl
-      }));
-      return cleanedUrl;
-    }
-    
-    try {
-      // Create user object for API call
-      const userObj = {
-        userName: userId,
-        imageFilenames: [imageFilename]
-      } as unknown as User;
-      
-      // Get image URLs
-      console.log(`Fetching image URL for ${userId}: ${imageFilename}`);
-      const urls = await GetUserProfileImages(userInfo, authTokens.idToken, userObj);
-      
-      // If we got URLs back, cache and return the first one
-      if (Array.isArray(urls) && urls.length > 0) {
-        const cleanedUrl = cleanImageUrl(urls[0]);
-        setProfileImagesCache(prev => ({
-          ...prev,
-          [cacheKey]: cleanedUrl
-        }));
-        
-        // Also store the URL under the original filename for easier lookup
-        if (cleanedUrl !== cleanFilename) {
-          setProfileImagesCache(prev => ({
-            ...prev,
-            [`${userId}-${imageFilename}`]: cleanedUrl
-          }));
-        }
-        
-        return cleanedUrl;
-      }
-    } catch (error) {
-      console.error('Error loading profile image:', error);
-    }
-    
-    // Fallback to direct S3 URL construction
-    const fallbackUrl = `https://ensoulee-user-images.s3.amazonaws.com/${userId}/${imageFilename}`;
-    setProfileImagesCache(prev => ({
-      ...prev,
-      [cacheKey]: fallbackUrl
-    }));
-    return fallbackUrl;
-  }, [userInfo, authTokens, profileImagesCache]);
+    // Just return the URL as-is - the API already provides proper URLs
+    return imageUrl;
+  }, []);
 
   // Refresh matches
   const refreshMatches = useCallback(async (): Promise<void> => {
@@ -169,7 +96,13 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
 
+    if (isRefreshingRef.current) {
+      console.log('Already refreshing matches, skipping duplicate call');
+      return;
+    }
+
     try {
+      isRefreshingRef.current = true;
       setIsLoading(true);
       
       const data = await GetUserMatches(userInfo, authTokens.idToken);
@@ -181,18 +114,6 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         
         if (processedMatches.length > 0) {
           setMatches(processedMatches);
-          
-          // Preload profile images for faster rendering
-          const preloadPromises = processedMatches.map(match => {
-            if (match.matchedUser?.profileImage) {
-              return loadProfileImage(match.matchedUser.id, match.matchedUser.profileImage)
-                .catch(() => null); // Silently continue if image fetch fails
-            }
-            return Promise.resolve(null);
-          });
-          
-          // Wait for all image preloading to finish
-          await Promise.all(preloadPromises);
         } else {
           setMatches([]);
         }
@@ -204,8 +125,9 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.error('Error fetching matches:', error);
     } finally {
       setIsLoading(false);
+      isRefreshingRef.current = false;
     }
-  }, [userInfo, authTokens, loadProfileImage]);
+  }, [userInfo, authTokens]);
 
   // Refresh potential matches
   const refreshPotentialMatches = useCallback(async (): Promise<void> => {
@@ -222,25 +144,6 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       if (data && Array.isArray(data)) {
         setPotentialMatches(data);
-        
-        // Cache any presigned image URLs
-        data.forEach((profile: any) => {
-          if (profile.presignedImageUrls && Array.isArray(profile.presignedImageUrls) && profile.presignedImageUrls.length > 0) {
-            // These URLs are already presigned, so just cache them
-            profile.presignedImageUrls.forEach((url: string, index: number) => {
-              if (url) {
-                if (url.startsWith('http')) {
-                  const cleanedUrl = cleanImageUrl(url);
-                  const cacheKey = `${profile.userName}-image-${index}`;
-                  setProfileImagesCache(prev => ({
-                    ...prev,
-                    [cacheKey]: cleanedUrl
-                  }));
-                }
-              }
-            });
-          }
-        });
       } else {
         console.log('No potential matches returned from API');
         setPotentialMatches([]);
