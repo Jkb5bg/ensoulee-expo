@@ -744,7 +744,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  // Improved logout function
+  // Improved logout function with proper navigation
   const logout = async () => {
     // Show loading during logout
     showLoading("Signing out...");
@@ -758,35 +758,74 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     // Unregister background fetch
     await unregisterBackgroundFetch();
     
-    if (!authTokens?.refreshToken || !discoveryDocument || !clientId) {
-      hideLoading();
-      return;
-    }
-    
     try {
-      const urlParams = new URLSearchParams({
-        client_id: clientId,
-        logout_uri: redirectUri,
-      });
+      // CRITICAL IMPROVEMENT: Update state FIRST before async operations
+      // This ensures UI updates immediately
+      setAuthTokens(null);
+      setUserInfo(null);
+      setUser(null);
+      setUserProfileImage(null);
       
-      // Open the logout page in the browser
-      const webBaseUrl = userPoolUri;
-      await WebBrowser.openAuthSessionAsync(`${webBaseUrl}/logout?${urlParams.toString()}`);
-      
-      // Revoke the refresh token
-      const revokeResponse = await revokeAsync(
-        {
-          clientId: clientId,
-          token: authTokens.refreshToken,
-        },
-        discoveryDocument
-      );
-      
-      if (revokeResponse) {
-        await saveAndSetAuthTokens(null);
+      // Clear all storage immediately in a separate try block
+      try {
+        await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
+        await SecureStore.deleteItemAsync(USER_INFO_KEY);
+        await SecureStore.deleteItemAsync(USER_DATA_KEY);
+        await SecureStore.deleteItemAsync(USER_PROFILE_IMAGE_KEY);
+        await SecureStore.deleteItemAsync(TOKEN_REFRESH_TIME_KEY);
+        await SecureStore.deleteItemAsync(AUTH_STATE_KEY);
+      } catch (storageError) {
+        console.error('Error clearing secure storage during logout:', storageError);
+        // Continue with logout even if storage clearing fails
       }
+      
+      // Only attempt cognito logout if needed
+      if (authTokens?.refreshToken && discoveryDocument && clientId) {
+        try {
+          const urlParams = new URLSearchParams({
+            client_id: clientId,
+            logout_uri: redirectUri,
+          });
+          
+          // Open the logout page in the browser
+          const webBaseUrl = userPoolUri;
+          await WebBrowser.openAuthSessionAsync(`${webBaseUrl}/logout?${urlParams.toString()}`);
+          
+          // Revoke the refresh token - but don't wait on success
+          revokeAsync(
+            {
+              clientId: clientId,
+              token: authTokens.refreshToken,
+            },
+            discoveryDocument
+          ).catch(error => {
+            console.error('Error revoking token:', error);
+            // Ignore revoke errors - user is already logged out locally
+          });
+        } catch (webError) {
+          // Ignore web browser errors - user is already logged out locally
+          console.error('Error in Cognito web logout:', webError);
+        }
+      }
+      
+      // Clear auth in progress state
+      authInProgressRef.current = false;
+      
     } catch (error) {
-      await saveAndSetAuthTokens(null);
+      console.error('Error in logout:', error);
+      
+      // Even on error, make sure state is cleared
+      setAuthTokens(null);
+      setUserInfo(null);
+      setUser(null);
+      setUserProfileImage(null);
+      
+      // Try to clear storage again as a failsafe
+      try {
+        await SecureStore.deleteItemAsync(AUTH_TOKENS_KEY);
+      } catch (e) {
+        // Ignore error
+      }
     } finally {
       hideLoading();
     }

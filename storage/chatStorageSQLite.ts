@@ -71,22 +71,57 @@ export async function saveChatMessages(
         [matchId, now]
       );
       
-      // Delete existing messages for this match
-      await db.runAsync('DELETE FROM messages WHERE match_id = ?;', [matchId]);
+      // CHANGE: Instead of deleting all messages, we'll selectively update/insert
       
-      // Insert all messages
+      // First, get all existing message timestamps for this chat
+      const existingResult = await db.getAllAsync<{ timestamp: number }>(
+        'SELECT timestamp FROM messages WHERE match_id = ?',
+        [matchId]
+      );
+      
+      // Create a Set of existing timestamps for efficient lookup
+      const existingTimestamps = new Set(existingResult.map(row => row.timestamp));
+      
+      // For each message, insert or update
       for (const message of messages) {
-        await db.runAsync(
-          `INSERT INTO messages (match_id, content, sender_id, timestamp, pending)
-           VALUES (?, ?, ?, ?, ?);`,
-          [
-            matchId,
-            message.content,
-            message.senderId,
-            message.timestamp,
-            message.pending ? 1 : 0
-          ]
-        );
+        if (existingTimestamps.has(message.timestamp)) {
+          // Message exists - update it, but PRESERVE pending status if the incoming message
+          // doesn't have pending=false explicitly set (might be from backend which doesn't track pending)
+          if (message.pending !== false) {
+            // Get current pending status
+            const pendingResult = await db.getFirstAsync<{ pending: number }>(
+              'SELECT pending FROM messages WHERE match_id = ? AND timestamp = ?',
+              [matchId, message.timestamp]
+            );
+            
+            const currentPending = pendingResult ? pendingResult.pending === 1 : false;
+            
+            // Only update content and sender_id, preserve pending status
+            await db.runAsync(
+              `UPDATE messages SET content = ?, sender_id = ? WHERE match_id = ? AND timestamp = ?`,
+              [message.content, message.senderId, matchId, message.timestamp]
+            );
+          } else {
+            // Explicit pending=false, update everything
+            await db.runAsync(
+              `UPDATE messages SET content = ?, sender_id = ?, pending = ? WHERE match_id = ? AND timestamp = ?`,
+              [message.content, message.senderId, message.pending ? 1 : 0, matchId, message.timestamp]
+            );
+          }
+        } else {
+          // Message doesn't exist - insert it
+          await db.runAsync(
+            `INSERT INTO messages (match_id, content, sender_id, timestamp, pending)
+             VALUES (?, ?, ?, ?, ?);`,
+            [
+              matchId,
+              message.content,
+              message.senderId,
+              message.timestamp,
+              message.pending ? 1 : 0
+            ]
+          );
+        }
       }
       
       // Commit the transaction

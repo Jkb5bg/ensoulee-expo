@@ -22,8 +22,6 @@ import { router } from 'expo-router';
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
 
-// TODO: Fix the white space when navigating to the messages tab
-
 export default function TabsLayout() {
     const { customHeader, activeChat } = useAppContext();
     

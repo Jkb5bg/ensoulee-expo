@@ -18,6 +18,7 @@ import { useAuth } from '@/components/AuthContext';
 import { useLoading } from '@/components/LoadingContext';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
 
 // Create a BackButton component with Ionicons
 const BackButton = ({ onPress }: { onPress: () => void }) => {
@@ -83,11 +84,28 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               showLoading("Signing out...");
+              
+              // First explicitly delete the tokens from storage
+              // This is a failsafe in case the logout function has issues
+              await SecureStore.deleteItemAsync('auth_tokens');
+              
+              // Then call the regular logout function
               await logout();
-              // Router will handle navigation based on auth state
+              
+              // Force navigation to root after a short delay
+              setTimeout(() => {
+                router.replace("/");
+              }, 300);
             } catch (error) {
               console.error("Error signing out:", error);
-              Alert.alert("Error", "Failed to sign out. Please try again.");
+              
+              // Even if there's an error, make sure tokens are deleted
+              await SecureStore.deleteItemAsync('auth_tokens');
+              
+              // Force navigation anyway
+              setTimeout(() => {
+                router.replace("/");
+              }, 300);
             } finally {
               hideLoading();
             }

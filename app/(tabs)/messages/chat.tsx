@@ -39,6 +39,9 @@ import {
 } from '@/storage/chatStorageSQLite';
 import { CheckForMessageUpdate } from '@/api/CheckForMessageUpdate';
 import ChatHeaderAvatar from '@/components/ChatHeaderAvatar';
+import { HandleBlock } from '@/api/HandleBlock';
+import { HandleReport } from '@/api/HandleReport';
+import DecodedTokenInfo from '@/types/decodedTokenInfo';
 
 
 const DEFAULT_AVATAR = require('@/assets/images/default-avatar.png');
@@ -63,7 +66,9 @@ export default function ChatScreen() {
   const profileImage = params.profileImage as string;
   const messageCheckTimestampRef = useRef<number | null>(null);
   const { loadProfileImage, profileImagesCache } = useAppData();
-  console.log('[ChatScreen] route param profileImage:', profileImage);
+  const [loadingFailed, setLoadingFailed] = useState(false);
+  const [actionInProgress, setActionInProgress] = useState(false);
+
 
 
   
@@ -280,13 +285,13 @@ export default function ChatScreen() {
       setLoading(false);
       return;
     }
-
+  
     // Check if sync is already in progress
     if (isSyncInProgress(matchId)) {
       console.log(`Sync already in progress for chat ${matchId}, skipping`);
       return;
     }
-
+  
     // Set sync flag
     setSyncInProgress(matchId, true);
     
@@ -295,76 +300,92 @@ export default function ChatScreen() {
       if (lastSynced) {
         setSyncingMessages(true);
       }
-
-      if (!token) {
-        throw new Error('No token available');
-      }
-
-      console.log(`Fetching messages from backend for chat ${matchId}`);
-      const data = await GetMessages(userInfo, matchId, token);
+  
+      // First, always get local messages regardless of backend availability
+      const storedData = await getChatMessages(db, matchId);
+      let localMessages = storedData?.messages || [];
       
-      if (data && data.messages && data.messages.length > 0) {
-        console.log(`Received ${data.messages.length} messages from backend`);
-        
-        // If we loaded from local storage first, we might need to merge messages
-        if (lastSynced && messages.length > 0) {
-          // Find messages newer than our last sync
-          const newMessages = data.messages.filter(
-            msg => msg.timestamp > lastSynced
-          );
+      // If we have local messages, set them immediately for better UX
+      if (localMessages.length > 0) {
+        console.log(`Found ${localMessages.length} local messages, displaying immediately`);
+        setMessages(localMessages);
+      }
+      
+      // Now try to fetch from backend if we have token
+      if (token) {
+        try {
+          console.log(`Fetching messages from backend for chat ${matchId}`);
+          const data = await GetMessages(userInfo, matchId, token);
           
-          console.log(`Found ${newMessages.length} new messages since last sync`);
-          
-          if (newMessages.length > 0) {
-            // Merge with existing messages, avoiding duplicates
-            const existingTimestamps = new Set(
-              messages.map(msg => msg.timestamp)
-            );
+          if (data && data.messages && data.messages.length > 0) {
+            console.log(`Received ${data.messages.length} messages from backend`);
             
-            const uniqueNewMessages = newMessages.filter(
-              msg => !existingTimestamps.has(msg.timestamp)
-            );
+            // Create maps for efficient lookup
+            const localMessageMap = new Map();
+            localMessages.forEach(msg => {
+              localMessageMap.set(msg.timestamp, msg);
+            });
             
-            console.log(`Found ${uniqueNewMessages.length} unique new messages to add`);
+            const backendMessageMap = new Map();
+            data.messages.forEach(msg => {
+              backendMessageMap.set(msg.timestamp, msg);
+            });
             
-            if (uniqueNewMessages.length > 0) {
-              // Create a new array once outside of setState to avoid multiple renders
-              const updatedMessages = [...messages, ...uniqueNewMessages].sort(
-                (a, b) => a.timestamp - b.timestamp
-              );
-              
-              setMessages(updatedMessages);
-              
-              // Save the updated list to local storage
-              await saveChatMessages(db, matchId, updatedMessages);
-              
-              // Scroll to bottom if new messages
-              setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: true });
-              }, 100);
+            // Prepare merged array
+            const mergedMessages: MessageType[] = [];
+            
+            // Add all backend messages
+            data.messages.forEach(backendMsg => {
+              mergedMessages.push(backendMsg);
+            });
+            
+            // Add local pending messages that aren't in backend response
+            localMessages.forEach(localMsg => {
+              // If this is a pending message that doesn't exist in the backend response
+              if (localMsg.pending && !backendMessageMap.has(localMsg.timestamp)) {
+                console.log(`Preserving local pending message at timestamp ${localMsg.timestamp}`);
+                mergedMessages.push(localMsg);
+              }
+            });
+            
+            // Sort by timestamp
+            const sortedMessages = mergedMessages.sort((a, b) => a.timestamp - b.timestamp);
+            
+            // Update state and storage
+            setMessages(sortedMessages);
+            await saveChatMessages(db, matchId, sortedMessages);
+          } else {
+            console.log('No messages received from backend');
+            // Important: If no messages from backend, but we have local messages
+            // keep using the local messages we already set above
+            if (localMessages.length === 0) {
+              // Only set empty state if this is initial load and we have no local messages
+              setMessages([]);
+              // Note we're NOT saving an empty array to storage here, as that would
+              // overwrite pending local messages if they exist but weren't returned
+              // from the backend for some reason
             }
           }
-        } else {
-          // First load, just set messages and save to storage
-          console.log('First load or no local messages, saving all to storage');
-          setMessages(data.messages);
-          await saveChatMessages(db, matchId, data.messages);
-          
-          // Scroll to bottom
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }, 100);
+        } catch (backendError) {
+          console.error('Error fetching from backend:', backendError);
+          // Just keep using local messages that were set earlier
         }
       } else {
-        console.log('No messages received from backend');
-        if (!lastSynced) {
-          // Only save empty state if this is the initial load
-          setMessages([]);
-          await saveChatMessages(db, matchId, []);
-        }
+        console.log('No token available, using only local messages');
+        // Already set localMessages above, no need to do it again
       }
     } catch (error) {
-      console.error('Error fetching messages:', error);
+      console.error('Error in fetchMessages flow:', error);
+      
+      // Try to recover by just loading local messages
+      try {
+        const fallbackData = await getChatMessages(db, matchId);
+        if (fallbackData && fallbackData.messages.length > 0) {
+          setMessages(fallbackData.messages);
+        }
+      } catch (fallbackError) {
+        console.error('Even fallback failed:', fallbackError);
+      }
       
       // Only show alert on initial load, not during background sync
       if (!lastSynced) {
@@ -375,7 +396,7 @@ export default function ChatScreen() {
       setSyncingMessages(false);
       setSyncInProgress(matchId, false);
     }
-  }, [db, matchId, user?.userName, userInfo?.userName, token, messages]);
+  }, [db, matchId, user?.userName, userInfo?.userName, token]);
 
   // Inside your component where you need to check for updates
   // Modified checkForUpdates function
@@ -507,13 +528,29 @@ export default function ChatScreen() {
 
   // Handle sending a message
   const handleSendMessage = useCallback(async () => {
-    if (!newMessage.trim() || !matchId || !user || !userInfo || !db) return;
+    // Log for debugging
+    console.log("Send button pressed, message:", newMessage);
+    
+    if (!newMessage.trim() || !matchId || !db) {
+      console.log("Basic send conditions not met:", {
+        hasMessage: !!newMessage.trim(),
+        hasMatchId: !!matchId,
+        hasDb: !!db
+      });
+      return;
+    }
+  
+    // IMPORTANT FIX: Get senderId from userInfo if user is not available
+    // This is the key fix - we're making sure we have a valid sender ID even if user object is null
+    const senderId = userInfo?.userName || "unknown";
+    if (!senderId || senderId === "unknown") {
+      console.log("Cannot determine sender ID:", { userInfo });
+      Alert.alert('Error', 'Could not determine your user ID. Please try again.');
+      return;
+    }
   
     const messageContent = newMessage.trim();
     const timestamp = Date.now();
-    
-    // Get the sender ID
-    const senderId = user?.userName || userInfo?.userName || "unknown";
   
     try {
       // Clear input immediately for better UX
@@ -527,66 +564,63 @@ export default function ChatScreen() {
         pending: true
       };
   
-      // Update local state
+      // Add to local state
       setMessages(prev => [...prev, tempMessage]);
   
-      // Add to local storage immediately
-      await addMessageToStorage(db, matchId, tempMessage);
+      // Add to local storage
+      try {
+        await addMessageToStorage(db, matchId, tempMessage);
+      } catch (storageError) {
+        console.error('Failed to save message to local storage:', storageError);
+        // Continue anyway - the message is at least in memory
+      }
   
       // Scroll to bottom
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
   
-      if (!token) {
-        throw new Error('No token available');
+      // Send to backend if token available
+      if (token) {
+        try {
+          await SendMessage(
+            userInfo as DecodedTokenInfo, // Ensure userInfo is of the correct type
+            matchId,
+            userId,
+            senderId,
+            timestamp,
+            token,
+            messageContent
+          );
+          
+          // Update pending status in state
+          setMessages(prev => 
+            prev.map(msg =>
+              msg.timestamp === timestamp ? { ...msg, pending: false } : msg
+            )
+          );
+          
+          // Update pending status in storage
+          try {
+            await updateMessageInStorage(db, matchId, timestamp, { pending: false });
+          } catch (updateError) {
+            console.error('Failed to update message status in storage:', updateError);
+          }
+        } catch (sendError) {
+          console.error('Error sending message to backend:', sendError);
+          // Message remains in pending state in both memory and storage
+        }
+      } else {
+        console.log('No token available, message saved locally only');
       }
-  
-      // Send to backend
-      await SendMessage(
-        userInfo,
-        matchId,
-        userId,
-        senderId,
-        timestamp,
-        token,
-        messageContent
-      );
-  
-      // Update pending status in state
-      setMessages(prev => 
-        prev.map(msg =>
-          msg.timestamp === timestamp ? { ...msg, pending: false } : msg
-        )
-      );
-      
-      // Update pending status in storage
-      await updateMessageInStorage(db, matchId, timestamp, { pending: false });
-      
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('Error in message sending flow:', error);
       Alert.alert('Error', 'Failed to send message');
       
-      // Remove failed message from state
+      // Try to recover by removing the failed message from state
       setMessages(prev => prev.filter(msg => msg.timestamp !== timestamp));
-      
-      // Remove failed message from storage
-      try {
-        // Get current messages
-        const storedData = await getChatMessages(db, matchId);
-        if (storedData) {
-          // Filter out the failed message
-          const updatedMessages = storedData.messages.filter(
-            msg => msg.timestamp !== timestamp
-          );
-          // Save the updated list
-          await saveChatMessages(db, matchId, updatedMessages);
-        }
-      } catch (storageError) {
-        console.error('Error removing failed message from storage:', storageError);
-      }
     }
-  }, [newMessage, matchId, user, userInfo, db, token, userId]);
+  }, [newMessage, matchId, userInfo, db, token, userId]);
 
   // Load messages on component mount
   useEffect(() => {
@@ -594,43 +628,53 @@ export default function ChatScreen() {
   
     const initializeChat = async () => {
       if (!matchId || !db || !userInfo || !authTokens?.idToken) return;
-  
+    
       try {
         // 1) Load from local SQLite
         const storedData = await getChatMessages(db, matchId);
-  
-        if (storedData) {
-          const { messages: storedMessages, lastSynced } = storedData;
-  
-          // only set messages if we actually have any
-          if (storedMessages.length > 0) {
-            setMessages(storedMessages);
+    
+        if (storedData && storedData.messages && storedData.messages.length > 0) {
+          console.log(`Found ${storedData.messages.length} local messages`);
+          setMessages(storedData.messages);
+          
+          // Compute latest timestamp safely
+          const latest = storedData.lastSynced || 
+            Math.max(...storedData.messages.map(msg => msg.timestamp), 0);
+    
+          // 2) Try backend check - handle errors gracefully
+          try {
+            const hasUpdates = await CheckForMessageUpdate(
+              userInfo,
+              authTokens.idToken,
+              matchId,
+              latest
+            );
+    
+            if (hasUpdates) {
+              await fetchMessages(latest);
+            }
+          } catch (updateError) {
+            console.warn('Update check failed, continuing with local data:', updateError);
           }
-  
-          // compute latest timestamp safely
-          const latest =
-            lastSynced ??
-            storedMessages[0]?.timestamp ??
-            0;
-  
-          // 2) One immediate backend-check
-          const hasUpdates = await CheckForMessageUpdate(
-            userInfo,
-            authTokens.idToken,
-            matchId,
-            latest
-          );
-  
-          if (hasUpdates) {
-            await fetchMessages(latest);
+        } else {
+          console.log(`No local messages found for chat ${matchId}, fetching from backend`);
+          try {
+            // If no local messages, try fetching from backend directly
+            await fetchMessages();
+          } catch (fetchError) {
+            console.warn('Initial backend fetch failed:', fetchError);
+            // Show empty state - we have no local or backend messages
+            setMessages([]);
           }
         }
       } catch (error) {
-        console.warn('Initial load or update-check failed:', error);
+        console.warn('Initial load failed completely:', error);
+        // Set empty state as fallback
+        setMessages([]);
       } finally {
         // 3) Prevent the interval from firing immediately
         messageCheckTimestampRef.current = Date.now();
-        // 4) Clear loading state
+        // 4) Clear loading state regardless of success/failure
         if (isMounted) {
           setLoading(false);
         }
@@ -705,68 +749,147 @@ export default function ChatScreen() {
       <Text style={styles.emptyChatSubtext}>
         Send a message to start the conversation!
       </Text>
+      
+      {/* Optional retry button for when loading failed */}
+      {loadingFailed && (
+        <TouchableOpacity 
+          style={additionalStyles.reloadButton}
+          onPress={handleRefresh}
+        >
+          <Text style={additionalStyles.reloadButtonText}>Retry</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
-  // Handle user blocking
-  const handleBlock = async (targetUserId: string, reason: string, details?: string) => {
-    if (!user || !userInfo) return;
-
+  const handleBlock = async (reason: string, details?: string) => {
+    if (!user || !userInfo || !db) {
+      Alert.alert('Error', 'User info not available');
+      return;
+    }
+  
+    if (!token) {
+      Alert.alert('Error', 'Authentication token not available');
+      return;
+    }
+  
+    // Set action in progress to prevent multiple calls
+    setActionInProgress(true);
+  
     try {
-      if (!token) return;
-      
-      // You would need to create a HandleBlock API function similar to HandleUnmatch
-      // await HandleBlock(userInfo, token, matchId, targetUserId, reason, details);
-      
-      Alert.alert('Success', 'User has been blocked');
-      router.back();
+      // Call API to block the user
+      const success = await HandleBlock(
+        userInfo,
+        token,
+        matchId,
+        userId,
+        reason,
+        details
+      );
+  
+      if (success) {
+        // Clear local storage for this chat since it's now blocked
+        if (db) {
+          try {
+            await clearChatStorage(db, matchId);
+          } catch (storageError) {
+            console.error('Error clearing chat storage after block:', storageError);
+          }
+        }
+  
+        Alert.alert('Success', 'User has been blocked');
+        
+        // Navigate back to the messages list
+        router.back();
+      } else {
+        Alert.alert('Error', 'Failed to block user');
+      }
     } catch (error) {
       console.error('Error blocking user:', error);
       Alert.alert('Error', 'Failed to block user');
+    } finally {
+      setActionInProgress(false);
     }
   };
 
   // Handle user reporting
-  const handleReport = async (targetUserId: string, reason: string, details?: string) => {
-    if (!user || !userInfo) return;
-
+  const handleReport = async (reason: string, details?: string) => {
+    if (!user || !userInfo) {
+      Alert.alert('Error', 'User info not available');
+      return;
+    }
+  
+    if (!token) {
+      Alert.alert('Error', 'Authentication token not available');
+      return;
+    }
+  
+    // Set action in progress to prevent multiple calls
+    setActionInProgress(true);
+  
     try {
-      if (!token) return;
-      
-      // You would need to create a HandleReport API function
-      // await HandleReport(userInfo, token, matchId, targetUserId, reason, details);
-      
-      Alert.alert('Success', 'User has been reported');
+      // Call API to report the user
+      const success = await HandleReport(
+        userInfo,
+        token,
+        matchId,
+        userId,
+        reason,
+        details
+      );
+  
+      if (success) {
+        Alert.alert('Success', 'User has been reported');
+      } else {
+        Alert.alert('Error', 'Failed to report user');
+      }
     } catch (error) {
       console.error('Error reporting user:', error);
       Alert.alert('Error', 'Failed to report user');
+    } finally {
+      setActionInProgress(false);
     }
   };
-
-  // Handle unmatch
   const handleUnmatch = async () => {
-    if (!user || !userInfo || !db) return;
-
+    if (!user || !userInfo || !db) {
+      Alert.alert('Error', 'User info not available');
+      return;
+    }
+  
+    if (!token) {
+      Alert.alert('Error', 'Authentication token not available');
+      return;
+    }
+  
+    // Set action in progress to prevent multiple calls
+    setActionInProgress(true);
+  
     try {
-      if (!token) return;
-      
-      // Use your HandleUnmatch API function
-      await HandleUnmatch(userInfo, token, matchId);
-      
-      // Clear local storage for this chat
-      if (db) {
-        try {
-          await clearChatStorage(db, matchId);
-        } catch (storageError) {
-          console.error('Error clearing chat storage:', storageError);
+      // Call API to unmatch
+      const success = await HandleUnmatch(userInfo, token, matchId);
+  
+      if (success) {
+        // Clear local storage for this chat since it's now unmatched
+        if (db) {
+          try {
+            await clearChatStorage(db, matchId);
+          } catch (storageError) {
+            console.error('Error clearing chat storage after unmatch:', storageError);
+          }
         }
+  
+        Alert.alert('Success', 'Unmatched successfully');
+        
+        // Navigate back to the messages list
+        router.back();
+      } else {
+        Alert.alert('Error', 'Failed to unmatch');
       }
-      
-      Alert.alert('Success', 'Unmatched successfully');
-      router.back();
     } catch (error) {
       console.error('Error unmatching:', error);
       Alert.alert('Error', 'Failed to unmatch');
+    } finally {
+      setActionInProgress(false);
     }
   };
 
@@ -861,9 +984,10 @@ export default function ChatScreen() {
                   matchId={matchId}
                   targetUserId={userId}
                   userName={userName}
-                  onBlock={(data) => handleBlock(userId, data.reason, data.details)}
-                  onReport={(data) => handleReport(userId, data.reason, data.details)}
+                  onBlock={({ reason = '', details = '' }) => handleBlock(reason, details)}
+                  onReport={({ reason = '', details = '' }) => handleReport(reason, details)}
                   onUnmatch={handleUnmatch}
+                  disabled={actionInProgress}
                 />
               </View>
             </>
@@ -910,18 +1034,25 @@ export default function ChatScreen() {
               onChangeText={setNewMessage}
               placeholder="Type a message..."
               placeholderTextColor="#999"
+              onSubmitEditing={handleSendMessage}
+              returnKeyType="send"
             />
             <TouchableOpacity
               style={[
                 styles.sendButton,
                 !newMessage.trim() && styles.disabledSendButton
               ]}
-              onPress={handleSendMessage}
-              disabled={!newMessage.trim()}
+              onPress={() => {
+                if (newMessage.trim()) {
+                  handleSendMessage();
+                }
+              }}
+              activeOpacity={newMessage.trim() ? 0.7 : 1}
             >
               <Ionicons name="send" size={24} color="white" />
             </TouchableOpacity>
           </View>
+
         </>
       )}
     </View>
@@ -1175,5 +1306,19 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(244, 77, 123, 0.3)',
     color: '#fff',
     fontWeight: '700',
+  },
+});
+
+const additionalStyles = StyleSheet.create({
+  reloadButton: {
+    backgroundColor: '#f44d7b',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    marginTop: 16,
+  },
+  reloadButtonText: {
+    color: 'white',
+    fontWeight: '600',
   },
 });

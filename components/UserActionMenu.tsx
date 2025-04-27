@@ -7,7 +7,8 @@ import {
   Modal,
   StyleSheet,
   TextInput,
-  Alert
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -18,6 +19,7 @@ interface UserActionMenuProps {
   onBlock: (data: { reason: string; details?: string }) => void;
   onReport: (data: { reason: string; details?: string }) => void;
   onUnmatch: () => void;
+  disabled?: boolean; // Add disabled prop
 }
 
 type ActionType = 'report' | 'block' | 'unmatch' | null;
@@ -28,15 +30,18 @@ export default function UserActionMenu({
   userName,
   onBlock,
   onReport,
-  onUnmatch
+  onUnmatch,
+  disabled = false
 }: UserActionMenuProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [actionType, setActionType] = useState<ActionType>(null);
   const [reason, setReason] = useState('');
   const [details, setDetails] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const openMenu = () => {
+    if (disabled) return;
     setMenuVisible(true);
   };
 
@@ -56,7 +61,14 @@ export default function UserActionMenu({
           { 
             text: 'Unmatch', 
             style: 'destructive',
-            onPress: onUnmatch 
+            onPress: () => {
+              setIsSubmitting(true);
+              // Call the onUnmatch prop function which handles the API call
+              Promise.resolve(onUnmatch())
+                .finally(() => {
+                  setIsSubmitting(false);
+                });
+            }
           }
         ]
       );
@@ -67,24 +79,31 @@ export default function UserActionMenu({
     setModalVisible(true);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!reason) {
       Alert.alert('Error', 'Please select a reason');
       return;
     }
 
-    setModalVisible(false);
-    
-    if (actionType === 'report') {
-      onReport({ reason, details });
-    } else if (actionType === 'block') {
-      onBlock({ reason, details });
+    setIsSubmitting(true);
+
+    try {
+      if (actionType === 'report') {
+        await Promise.resolve(onReport({ reason, details }));
+      } else if (actionType === 'block') {
+        await Promise.resolve(onBlock({ reason, details }));
+      }
+    } catch (error) {
+      console.error(`Error during ${actionType} action:`, error);
+    } finally {
+      setIsSubmitting(false);
+      setModalVisible(false);
+      
+      // Reset form
+      setReason('');
+      setDetails('');
+      setActionType(null);
     }
-    
-    // Reset form
-    setReason('');
-    setDetails('');
-    setActionType(null);
   };
 
   const renderReasonOptions = () => {
@@ -100,6 +119,7 @@ export default function UserActionMenu({
           reason === option && styles.selectedReason
         ]}
         onPress={() => setReason(option)}
+        disabled={isSubmitting}
       >
         <Text style={[
           styles.reasonText,
@@ -113,8 +133,19 @@ export default function UserActionMenu({
 
   return (
     <View>
-      <TouchableOpacity onPress={openMenu} style={styles.menuButton}>
-        <Ionicons name="ellipsis-vertical" size={24} color="white" />
+      <TouchableOpacity 
+        onPress={openMenu} 
+        style={[
+          styles.menuButton,
+          disabled && styles.disabledButton
+        ]}
+        disabled={disabled}
+      >
+        <Ionicons 
+          name="ellipsis-vertical" 
+          size={24} 
+          color={disabled ? "#666" : "white"} 
+        />
       </TouchableOpacity>
 
       <Modal
@@ -160,7 +191,13 @@ export default function UserActionMenu({
         visible={modalVisible}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => {
+          if (!isSubmitting) {
+            setModalVisible(false);
+            setReason('');
+            setDetails('');
+          }
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.formContainer}>
@@ -168,12 +205,14 @@ export default function UserActionMenu({
               <Text style={styles.formTitle}>
                 {actionType === 'report' ? 'Report' : 'Block'} {userName}
               </Text>
-              <TouchableOpacity
-                onPress={() => setModalVisible(false)}
-                style={styles.closeButton}
-              >
-                <Ionicons name="close" size={24} color="white" />
-              </TouchableOpacity>
+              {!isSubmitting && (
+                <TouchableOpacity
+                  onPress={() => setModalVisible(false)}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={24} color="white" />
+                </TouchableOpacity>
+              )}
             </View>
 
             <Text style={styles.formLabel}>Reason:</Text>
@@ -190,15 +229,25 @@ export default function UserActionMenu({
               onChangeText={setDetails}
               placeholder="Tell us more..."
               placeholderTextColor="#999"
+              editable={!isSubmitting}
             />
 
             <TouchableOpacity
-              style={styles.submitButton}
+              style={[
+                styles.submitButton,
+                !reason && styles.disabledSubmitButton,
+                isSubmitting && styles.submittingButton
+              ]}
               onPress={handleSubmit}
+              disabled={!reason || isSubmitting}
             >
-              <Text style={styles.submitButtonText}>
-                {actionType === 'report' ? 'Report' : 'Block'}
-              </Text>
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Text style={styles.submitButtonText}>
+                  {actionType === 'report' ? 'Report' : 'Block'}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -210,6 +259,9 @@ export default function UserActionMenu({
 const styles = StyleSheet.create({
   menuButton: {
     padding: 8,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
   modalOverlay: {
     flex: 1,
@@ -308,6 +360,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     alignItems: 'center',
+  },
+  disabledSubmitButton: {
+    backgroundColor: '#555',
+    opacity: 0.7,
+  },
+  submittingButton: {
+    backgroundColor: '#f44d7b',
+    opacity: 0.8,
   },
   submitButtonText: {
     color: 'white',
