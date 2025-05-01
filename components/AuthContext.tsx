@@ -22,8 +22,7 @@ WebBrowser.maybeCompleteAuthSession();
 // Define constants
 const clientId: string = process.env.EXPO_PUBLIC_COGNITO_CLIENT_ID ?? '';
 const userPoolUri: string = process.env.EXPO_PUBLIC_USER_POOL_ID ?? '';
-const redirectUri = AuthSession.makeRedirectUri();
-console.log('Redirect URI:', redirectUri);
+const redirectUri = "ensoulee://"
 const AUTH_TOKENS_KEY: string = 'auth_tokens';
 const USER_INFO_KEY: string = 'user_info';
 const USER_DATA_KEY: string = 'user_data';
