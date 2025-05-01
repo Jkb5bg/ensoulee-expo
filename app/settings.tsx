@@ -19,6 +19,11 @@ import { useLoading } from '@/components/LoadingContext';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useIsFocused } from '@react-navigation/native';
+import { GetUserImages } from '@/api/DeleteUserImage';
+
+
 
 // Create a BackButton component with Ionicons
 const BackButton = ({ onPress }: { onPress: () => void }) => {
@@ -31,14 +36,23 @@ const BackButton = ({ onPress }: { onPress: () => void }) => {
 
 const DEFAULT_AVATAR = require("@/assets/images/default-avatar.png");
 
+// Interface for image data returned from API
+interface ImageData {
+  filename: string;
+  url: string;
+}
+
 export default function SettingsScreen() {
   const [activeTab, setActiveTab] = useState('profile');
-  const { authTokens, userInfo, user, logout, getValidToken, refreshUserData } = useAuth();
+  const { authTokens, userInfo, user, logout, getValidToken, refreshUserData, userProfileImage } = useAuth();
   const { showLoading, hideLoading } = useLoading();
   const [loading, setLoading] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [error, setError] = useState('');
   const isFetchingData = useRef(false);
+  const isFocused = useIsFocused();
+  const hasRefreshed = useRef(false);
 
   const [profileData, setProfileData] = useState({
     firstName: '',
@@ -60,8 +74,9 @@ export default function SettingsScreen() {
 
   // Notification settings
   const [newsletterEnabled, setNewsletterEnabled] = useState(true);
-  const [messagesNotifications, setMessagesNotifications] = useState('yes');
   const [friendRequestNotifications, setFriendRequestNotifications] = useState('yes');
+  const [messagesNotifications, setMessagesNotifications] = useState<'yes'|'no'>('yes');
+  const [matchesNotifications, setMatchesNotifications] = useState<'yes'|'no'>('yes');
 
   // Privacy settings
   const [profileViewability, setProfileViewability] = useState('everyone');
@@ -69,6 +84,85 @@ export default function SettingsScreen() {
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
   };
+
+  useEffect(() => {
+    if (isFocused && !hasRefreshed.current) {
+      console.log('🔄 SettingsScreen focused, refreshing user data');
+      refreshUserData().catch(e => console.error('Error refreshing:', e));
+      hasRefreshed.current = true;
+    }
+    if (!isFocused) {
+      // Reset so next time you enter the screen it’ll refresh again
+      hasRefreshed.current = false;
+    }
+  }, [isFocused, refreshUserData]);
+
+  // Load user profile images using all images endpoint
+  const loadUserImages = useCallback(async () => {
+    if (!user?.userName || !userInfo?.apiKey) {
+      console.warn('⚠️ loadUserImages: missing userInfo');
+      return;
+    }
+  
+    console.log('🔄 loadUserImages()', { userName: user.userName });
+    setImageLoading(true);
+    try {
+      const token = await getValidToken();
+      console.log('🔑 loadUserImages got token:', token?.slice(0, 10) + '…');
+  
+      // Call your shared helper
+      const images: ImageData[] = await GetUserImages(userInfo, token!, user);
+      console.log('📦 GetUserImages returned:', images);
+  
+      if (images.length > 0) {
+        // Use the very first signed URL
+        setProfileImage(images[0].url);
+        console.log('✅ setProfileImage to', images[0].url);
+      } else {
+        console.warn('⚠️ No images returned for', userInfo.userName);
+        setProfileImage(null);
+      }
+    } catch (err) {
+      console.error('❌ loadUserImages error:', err);
+      setProfileImage(null);
+    } finally {
+      setImageLoading(false);
+    }
+  }, [userInfo, getValidToken]);
+  
+
+  // Fallback method to load just the profile image
+  const loadSingleProfileImage = useCallback(async () => {
+    if (!userInfo?.userName || !userInfo?.apiKey || !user?.imageFilenames?.length) {
+      return null;
+    }
+
+    try {
+      const token = await getValidToken();
+      if (!token) return null;
+
+      const imageFilename = user.imageFilenames[0];
+      const imageResponse = await fetch(
+        `${process.env.EXPO_PUBLIC_ENSOULEE_API_URL}api/images/${userInfo.userName}/${imageFilename}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-api-key': userInfo.apiKey
+          }
+        }
+      );
+
+      if (imageResponse.ok) {
+        const imageUrl = await imageResponse.text();
+        setProfileImage(imageUrl);
+        return imageUrl;
+      }
+    } catch (error) {
+      console.error('Error loading single profile image:', error);
+    }
+
+    return null;
+  }, [userInfo, user, getValidToken]);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -85,11 +179,15 @@ export default function SettingsScreen() {
             try {
               showLoading("Signing out...");
               
-              // First explicitly delete the tokens from storage
-              // This is a failsafe in case the logout function has issues
+              // Clear image cache
+              if (userInfo?.userName) {
+                await AsyncStorage.removeItem(`userImages_${userInfo.userName}`);
+              }
+              
+              // Delete tokens from storage
               await SecureStore.deleteItemAsync('auth_tokens');
               
-              // Then call the regular logout function
+              // Call the logout function
               await logout();
               
               // Force navigation to root after a short delay
@@ -116,6 +214,10 @@ export default function SettingsScreen() {
     );
   };
 
+  const navigateToProfileSetup = () => {
+    router.push('/profile-edit-screen');
+  }
+
   const handleDeleteAccount = () => {
     Alert.alert(
       "Delete Account",
@@ -136,41 +238,6 @@ export default function SettingsScreen() {
       ]
     );
   };
-
-  // Load user profile image
-  const loadUserProfileImage = useCallback(async (imageFilenames: string[]) => {
-    if (!userInfo?.userName || !userInfo?.apiKey || !imageFilenames.length) return null;
-
-    try {
-      const token = await getValidToken();
-      if (!token) {
-        console.log("Missing token for image loading");
-        return null;
-      }
-
-      // Fetch presigned URL for the first image
-      const imageResponse = await fetch(
-        `${process.env.EXPO_PUBLIC_ENSOULEE_API_URL}api/images/${userInfo.userName}/${imageFilenames[0]}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'x-api-key': userInfo.apiKey
-          }
-        }
-      );
-
-      if (imageResponse.ok) {
-        const imageUrl = await imageResponse.text();
-        setProfileImage(imageUrl);
-        console.log("Jason here is the iamageUrl", imageUrl);
-        return imageUrl;
-      }
-    } catch (error) {
-      console.error('Error loading user profile image:', error);
-    }
-
-    return null;
-  }, [userInfo, getValidToken]);
 
   // Fetch user data only once
   const fetchUserData = useCallback(async () => {
@@ -212,10 +279,9 @@ export default function SettingsScreen() {
         // Set privacy settings based on user data
         setProfileViewability(user.privateProfile ? 'onlyMe' : 'everyone');
 
-        // Load profile image if user has images
-        if (imageFilenames.length > 0) {
-          await loadUserProfileImage(imageFilenames);
-        }
+        // Load profile images if user has images
+        await loadUserImages();
+
       } else {
         setError('Failed to load user data');
       }
@@ -230,7 +296,7 @@ export default function SettingsScreen() {
         isFetchingData.current = false;
       }, 1000); // Add a small delay to prevent rapid refetching
     }
-  }, [user, refreshUserData, loadUserProfileImage, showLoading, hideLoading]);
+  }, [user, refreshUserData, loadUserImages, showLoading, hideLoading]);
 
   // Only fetch user data on initial mount
   useEffect(() => {
@@ -244,15 +310,27 @@ export default function SettingsScreen() {
     };
   }, [userInfo]);
 
-  const handleUpdateProfile = async (updatedData: { privateProfile?: boolean; firstName?: string; bio?: string; }) => {
+  // Try to reload profile image if it's missing
+  useEffect(() => {
+    if ((user?.imageFilenames?.length ?? 0) > 0 && !profileImage && !imageLoading && !loading) {
+      console.log("Attempting to reload profile image");
+      loadUserImages();
+    }
+  }, [user, profileImage, imageLoading, loading, loadUserImages]);
+
+  const updatePrivacySettings = async () => {
     try {
       setLoading(true);
-      showLoading("Updating profile...");
+      showLoading("Updating privacy settings...");
       
       const token = await getValidToken();
       if (!token || !userInfo?.apiKey) {
         throw new Error('Authentication required');
       }
+
+      const updatedData = {
+        privateProfile: profileViewability === 'onlyMe'
+      };
 
       const response = await fetch(`${process.env.EXPO_PUBLIC_ENSOULEE_API_URL}user/self`, {
         method: 'POST',
@@ -268,100 +346,103 @@ export default function SettingsScreen() {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
 
-      Alert.alert('Success', 'Your profile has been updated');
-
-      // Update local state to avoid another API call
+      // Update local state
       setProfileData(prev => ({
         ...prev,
-        ...updatedData
+        privateProfile: updatedData.privateProfile
       }));
+
+      Alert.alert('Success', 'Your privacy settings have been updated');
     } catch (error) {
-      console.error('Error updating profile:', error);
-      Alert.alert('Error', 'Failed to update your profile. Please try again.');
+      console.error('Error updating privacy settings:', error);
+      Alert.alert('Error', 'Failed to update your privacy settings. Please try again.');
     } finally {
       setLoading(false);
       hideLoading();
     }
   };
 
-  const updatePrivacySettings = async () => {
-    const updatedData = {
-      privateProfile: profileViewability === 'onlyMe'
-    };
-
-    await handleUpdateProfile(updatedData);
-  };
-
+  // Modified to display profile as static information
   const renderProfileContent = () => {
     return (
       <View style={styles.tabContent}>
         <View style={styles.profileImageContainer}>
-          <Image
-            source={profileImage ? { uri: profileImage } : DEFAULT_AVATAR}
-            style={styles.profileImage}
-          />
-          <TouchableOpacity style={styles.changeProfileButton}>
-            <Text style={styles.changeProfileButtonText}>Change Profile</Text>
+          {imageLoading ? (
+            <View style={styles.profileImageLoader}>
+              <ActivityIndicator size="large" color="#F44D7B" />
+            </View>
+          ) : (
+            <Image
+              source={profileImage ? { uri: profileImage } : DEFAULT_AVATAR}
+              style={styles.profileAvatar}
+              onError={(e) => console.error('❌ Settings avatar failed to load:', e.nativeEvent)}
+            />
+          )}
+          <TouchableOpacity style={styles.changeProfileButton} onPress={navigateToProfileSetup}>
+            <Text style={styles.changeProfileButtonText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionTitle}>Personal Info</Text>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Name</Text>
-          <TextInput
-            style={styles.input}
-            value={profileData.firstName}
-            onChangeText={(text) => setProfileData({...profileData, firstName: text})}
-            placeholderTextColor="#FFFFFF80"
-          />
+        
+        {/* Static info display instead of input fields */}
+        <View style={styles.infoContainer}>
+          <Text style={styles.infoLabel}>Name</Text>
+          <Text style={styles.infoValue}>{profileData.firstName || 'Not provided'}</Text>
         </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Bio</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={profileData.bio}
-            onChangeText={(text) => setProfileData({...profileData, bio: text})}
-            multiline
-            numberOfLines={4}
-            placeholderTextColor="#FFFFFF80"
-            placeholder="Enter your bio..."
-          />
+        <View style={styles.infoContainer}>
+          <Text style={styles.infoLabel}>Bio</Text>
+          <Text style={styles.infoValue}>{profileData.bio || 'No bio provided'}</Text>
         </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.sectionTitle}>Location</Text>
-          <View style={styles.rowContainer}>
-            <View style={styles.halfColumn}>
-              <Text style={styles.inputLabel}>State</Text>
-              <TouchableOpacity style={styles.input}>
-                <Text style={styles.selectText}>{profileData.state || "Select State"}</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.halfColumn}>
-              <Text style={styles.inputLabel}>City</Text>
-              <TouchableOpacity style={styles.input}>
-                <Text style={styles.selectText}>{profileData.city || "Select City"}</Text>
-              </TouchableOpacity>
-            </View>
+        <View style={styles.infoContainer}>
+          <Text style={styles.infoLabel}>Occupation</Text>
+          <Text style={styles.infoValue}>{profileData.occupation || 'Not provided'}</Text>
+        </View>
+
+        <Text style={styles.sectionTitle}>Location</Text>
+        <View style={styles.rowContainer}>
+          <View style={styles.halfColumn}>
+            <Text style={styles.infoLabel}>State</Text>
+            <Text style={styles.infoValue}>{profileData.state || 'Not provided'}</Text>
+          </View>
+          <View style={styles.halfColumn}>
+            <Text style={styles.infoLabel}>City</Text>
+            <Text style={styles.infoValue}>{profileData.city || 'Not provided'}</Text>
           </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.updateButton}
-          onPress={() => handleUpdateProfile({
-            firstName: profileData.firstName,
-            bio: profileData.bio
-          })}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Text style={styles.updateButtonText}>Update</Text>
-          )}
-        </TouchableOpacity>
+        <Text style={styles.sectionTitle}>Gender Preferences</Text>
+        <View style={styles.infoContainer}>
+          <Text style={styles.infoLabel}>I am a</Text>
+          <Text style={styles.infoValue}>{profileData.sex ? profileData.sex.charAt(0).toUpperCase() + profileData.sex.slice(1) : 'Not specified'}</Text>
+        </View>
+        
+        <View style={styles.infoContainer}>
+          <Text style={styles.infoLabel}>Looking for</Text>
+          <Text style={styles.infoValue}>
+            {profileData.matchSex === 'both' 
+              ? 'Men and Women' 
+              : profileData.matchSex 
+                ? profileData.matchSex.charAt(0).toUpperCase() + profileData.matchSex.slice(1) + 's'
+                : 'Not specified'}
+          </Text>
+        </View>
+              {/* New Onboarding Section */}
+      <Text style={styles.sectionTitle}>Onboarding</Text>
+      <TouchableOpacity
+        style={styles.onboardingButton}
+        onPress={() => router.push('/quiz')}
+      >
+        <Text style={styles.onboardingButtonText}>Take Onboarding Quiz</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.onboardingButton}
+        onPress={() => router.push('/demographics')}
+      >
+        <Text style={styles.onboardingButtonText}>Update Demographics</Text>
+      </TouchableOpacity>
       </View>
     );
   };
@@ -369,43 +450,8 @@ export default function SettingsScreen() {
   const renderNotificationsContent = () => {
     return (
       <View style={styles.tabContent}>
-        <Text style={styles.sectionTitle}>Newsletter</Text>
-        <Text style={styles.notificationDescription}>
-          By enabling this option, you would be likely to receive occasional news
-          on our website and our services and offers, promotions and other
-          benefits to our partners.
-        </Text>
-
-        <View style={styles.radioGroup}>
-          <TouchableOpacity 
-            style={styles.radioOption} 
-            onPress={() => setNewsletterEnabled(true)}
-          >
-            <View style={[
-              styles.radioButton, 
-              newsletterEnabled && styles.radioButtonSelected
-            ]}>
-              {newsletterEnabled && <View style={styles.radioButtonInner} />}
-            </View>
-            <Text style={styles.radioText}>Enable</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.radioOption} 
-            onPress={() => setNewsletterEnabled(false)}
-          >
-            <View style={[
-              styles.radioButton, 
-              !newsletterEnabled && styles.radioButtonSelected
-            ]}>
-              {!newsletterEnabled && <View style={styles.radioButtonInner} />}
-            </View>
-            <Text style={styles.radioText}>Disable</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.divider} />
-
+    
+        {/* Messages */}
         <Text style={styles.sectionTitle}>Messages</Text>
         <View style={styles.radioGroup}>
           <TouchableOpacity 
@@ -418,9 +464,14 @@ export default function SettingsScreen() {
             ]}>
               {messagesNotifications === 'yes' && <View style={styles.radioButtonInner} />}
             </View>
-            <Text style={styles.radioText}>Yes</Text>
+            <Text style={[
+              styles.radioText,
+              messagesNotifications === 'yes' && styles.radioTextSelected
+            ]}>
+              Enabled
+            </Text>
           </TouchableOpacity>
-          
+    
           <TouchableOpacity 
             style={styles.radioOption} 
             onPress={() => setMessagesNotifications('no')}
@@ -431,39 +482,57 @@ export default function SettingsScreen() {
             ]}>
               {messagesNotifications === 'no' && <View style={styles.radioButtonInner} />}
             </View>
-            <Text style={styles.radioText}>No</Text>
+            <Text style={[
+              styles.radioText,
+              messagesNotifications === 'no' && styles.radioTextSelected
+            ]}>
+              Disabled
+            </Text>
           </TouchableOpacity>
         </View>
-
-        <Text style={styles.sectionTitle}>Friend request</Text>
+    
+        <View style={styles.divider} />
+    
+        {/* Matches */}
+        <Text style={styles.sectionTitle}>Matches</Text>
         <View style={styles.radioGroup}>
           <TouchableOpacity 
             style={styles.radioOption} 
-            onPress={() => setFriendRequestNotifications('yes')}
+            onPress={() => setMatchesNotifications('yes')}
           >
             <View style={[
               styles.radioButton, 
-              friendRequestNotifications === 'yes' && styles.radioButtonSelected
+              matchesNotifications === 'yes' && styles.radioButtonSelected
             ]}>
-              {friendRequestNotifications === 'yes' && <View style={styles.radioButtonInner} />}
+              {matchesNotifications === 'yes' && <View style={styles.radioButtonInner} />}
             </View>
-            <Text style={styles.radioText}>Yes</Text>
+            <Text style={[
+              styles.radioText,
+              matchesNotifications === 'yes' && styles.radioTextSelected
+            ]}>
+              Enabled
+            </Text>
           </TouchableOpacity>
-          
+    
           <TouchableOpacity 
             style={styles.radioOption} 
-            onPress={() => setFriendRequestNotifications('no')}
+            onPress={() => setMatchesNotifications('no')}
           >
             <View style={[
               styles.radioButton, 
-              friendRequestNotifications === 'no' && styles.radioButtonSelected
+              matchesNotifications === 'no' && styles.radioButtonSelected
             ]}>
-              {friendRequestNotifications === 'no' && <View style={styles.radioButtonInner} />}
+              {matchesNotifications === 'no' && <View style={styles.radioButtonInner} />}
             </View>
-            <Text style={styles.radioText}>No</Text>
+            <Text style={[
+              styles.radioText,
+              matchesNotifications === 'no' && styles.radioTextSelected
+            ]}>
+              Disabled
+            </Text>
           </TouchableOpacity>
         </View>
-
+    
         <TouchableOpacity style={styles.updateButton} disabled={loading}>
           {loading ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
@@ -471,9 +540,10 @@ export default function SettingsScreen() {
             <Text style={styles.updateButtonText}>Update</Text>
           )}
         </TouchableOpacity>
+    
       </View>
     );
-  };
+  }
 
   const renderPrivacyContent = () => {
     return (
@@ -551,10 +621,17 @@ export default function SettingsScreen() {
     return (
       <View style={styles.tabContent}>
         <View style={styles.profileImageContainer}>
-          <Image
-            source={profileImage ? { uri: profileImage } : DEFAULT_AVATAR}
-            style={styles.profileImage}
-          />
+          {imageLoading ? (
+            <View style={styles.profileImageLoader}>
+              <ActivityIndicator size="large" color="#F44D7B" />
+            </View>
+          ) : (
+            <Image
+              source={profileImage ? { uri: profileImage } : DEFAULT_AVATAR}
+              style={styles.profileAvatar}
+              onError={(e) => console.error('❌ Settings avatar failed to load:', e.nativeEvent)}
+            />
+          )}
           <Text style={styles.userName}>{profileData.firstName}</Text>
           <Text style={styles.userEmail}>{profileData.email}</Text>
 
@@ -576,7 +653,6 @@ export default function SettingsScreen() {
               </LinearGradient>
             </TouchableOpacity>
           )}
-
 
           <TouchableOpacity
             style={styles.signOutButton}
@@ -785,6 +861,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 24
   },
+  profileImageLoader: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(52, 55, 56, 1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10
+  },
   profileImage: {
     width: 120,
     height: 120,
@@ -811,6 +896,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#FFFFFF",
     marginBottom: 15
+  },
+  // New static info display styles
+  infoContainer: {
+    marginBottom: 16,
+    backgroundColor: "rgba(52, 55, 56, 0.5)",
+    borderRadius: 8,
+    padding: 12
+  },
+  infoLabel: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.5)",
+    marginBottom: 5,
+    fontWeight: '400'
+  },
+  infoValue: {
+    color: "#FFFFFF",
+    fontWeight: '400',
+    fontSize: 16,
+    marginTop: 3
   },
   inputContainer: {
     marginBottom: 16
@@ -892,12 +996,6 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: '#F44D7B'
   },
-  radioText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: '400',
-    flex: 1
-  },
   notificationDescription: {
     color: "#B4862C",
     fontSize: 14,
@@ -972,5 +1070,35 @@ const styles = StyleSheet.create({
     color: "#F44D7B",
     fontWeight: '600',
     fontSize: 16
+  },
+  radioText: {
+    fontSize: 16,
+    color: '#fff',
+    marginLeft: 8,
+  },
+  radioTextSelected: {
+    color: '#F44D7B',
+    fontWeight: '600',
+  },
+  profileAvatar: {
+    width: 100,            // or whatever size you need
+    height: 100,
+    borderRadius: 50,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#F44D7B',
+  },
+  onboardingButton: {
+    backgroundColor: 'rgba(244,77,123,1)',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  onboardingButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   }
 });

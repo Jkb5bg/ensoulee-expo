@@ -58,20 +58,20 @@ export const GetUserProfileImage = async (
     
     // FIXED: Check if 'dev' is already included in the base URL
     // Also ensure we don't have duplicate api paths
-    let imagePath = `api/images/${tokenInfo.userName}/${encodeURIComponent(filename)}`;
+    let imagePath = `api/images/${userData.userName}/${encodeURIComponent(filename)}`;
     
     // If baseUrl already contains dev/ and api/, we just need the additional path
     if (baseUrl.includes('/dev/api/')) {
-      imagePath = `images/${tokenInfo.userName}/${encodeURIComponent(filename)}`;
+      imagePath = `images/${userData.userName}/${encodeURIComponent(filename)}`;
     } 
     // If baseUrl already contains dev/ but not api/
     else if (baseUrl.includes('/dev/')) {
-      imagePath = `api/images/${tokenInfo.userName}/${encodeURIComponent(filename)}`;
+      imagePath = `api/images/${userData.userName}/${encodeURIComponent(filename)}`;
     }
     // If baseUrl doesn't contain dev/ but should
     else if (!baseUrl.includes('/dev/')) {
       baseUrl = `${baseUrl}/dev`;
-      imagePath = `api/images/${tokenInfo.userName}/${encodeURIComponent(filename)}`;
+      imagePath = `api/images/${userData.userName}/${encodeURIComponent(filename)}`;
     }
     
     // Construct the full URL

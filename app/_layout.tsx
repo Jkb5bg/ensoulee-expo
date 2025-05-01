@@ -12,6 +12,7 @@ import Constants from 'expo-constants';
 import NotificationRegistration from '@/components/NotificationRegistration';
 import {router} from 'expo-router';
 import NotificationHandler from '@/components/NotificationHandler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -171,68 +172,77 @@ export default function RootLayout() {
 
     return (
         <View style={styles.container}>
-            <LoadingProvider>
-                <AuthProvider>
-                    <AppProvider>
-                        <NotificationHandler />
-                        {expoPushToken ? <NotificationRegistration expoPushToken={expoPushToken} /> : null}
+            <GestureHandlerRootView style={styles.container}>
+                <LoadingProvider>
+                    <AuthProvider>
+                        <AppProvider>
+                            <NotificationHandler />
+                            {expoPushToken ? <NotificationRegistration expoPushToken={expoPushToken} /> : null}
 
-                        <StatusBar hidden={false} translucent style="light" />
-                        {/* Define Stack navigation for the entire app */}
-                        <Stack 
-                            screenOptions={{
-                                headerShown: false,
-                                contentStyle: { backgroundColor: 'black' },
-                                animation: 'slide_from_right',
-                            }}
-                        >
-                            {/* Regular app flow */}
-                            <Stack.Screen name="index" />
-                            
-                            {/* Grouped routes */}
-                            <Stack.Screen 
-                                name="(tabs)" 
-                                options={{ 
+                            <StatusBar hidden={false} translucent style="light" />
+                            {/* Define Stack navigation for the entire app */}
+                            <Stack 
+                                screenOptions={{
                                     headerShown: false,
+                                    contentStyle: { backgroundColor: 'black' },
+                                    animation: 'slide_from_right',
                                 }}
-                            />
-                            
-                            {/* Auth flow */}
-                            <Stack.Screen 
-                                name="(auth)" 
-                                options={{
-                                    headerShown: false,
-                                }}
-                            />
-                            
-                            {/* Onboarding flow */}
-                            <Stack.Screen 
-                                name="(onboarding)" 
-                                options={{
-                                    headerShown: false,
-                                }}
-                            />
-                            
-                            {/* Settings screen - will stack on top of (tabs) */}
-                            <Stack.Screen 
-                                name="settings" 
-                                options={{
-                                    headerShown: false,
-                                    presentation: 'card',
-                                }}
-                            />
+                            >
+                                {/* Regular app flow */}
+                                <Stack.Screen name="index" />
+                                
+                                {/* Grouped routes */}
+                                <Stack.Screen 
+                                    name="(tabs)" 
+                                    options={{ 
+                                        headerShown: false,
+                                    }}
+                                />
+                                
+                                {/* Auth flow */}
+                                <Stack.Screen 
+                                    name="(auth)" 
+                                    options={{
+                                        headerShown: false,
+                                    }}
+                                />
+                                
+                                {/* Onboarding flow */}
+                                <Stack.Screen 
+                                    name="(onboarding)" 
+                                    options={{
+                                        headerShown: false,
+                                    }}
+                                />
+                                
+                                {/* Settings screen - will stack on top of (tabs) */}
+                                <Stack.Screen 
+                                    name="settings" 
+                                    options={{
+                                        headerShown: false,
+                                        presentation: 'card',
+                                    }}
+                                />
 
-                            <Stack.Screen
-                                name="subscription"
-                                options={{
-                                    headerShown: false,
-                                    presentation: 'card',
-                                }}
-                            />
-                        </Stack>
-                    </AppProvider>
-                </AuthProvider>
-            </LoadingProvider>
+                                <Stack.Screen
+                                    name="subscription"
+                                    options={{
+                                        headerShown: false,
+                                        presentation: 'card',
+                                    }}
+                                />
+                                <Stack.Screen
+                                    name="profile-edit-screen"
+                                    options={{
+                                        headerShown: false,
+                                        presentation: 'card',
+                                    }}
+                                />
+                            </Stack>
+                        </AppProvider>
+                    </AuthProvider>
+                </LoadingProvider>
+            </GestureHandlerRootView>
         </View>
     );
 }

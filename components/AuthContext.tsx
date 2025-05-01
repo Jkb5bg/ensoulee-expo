@@ -13,8 +13,6 @@ import { GetUserProfileImage } from '@/api/GetUserProfileImage';
 import DecodedTokenInfo from '@/types/decodedTokenInfo';
 import RawDecodedToken from '@/types/rawDecodedToken';
 import User from '@/types/user';
-import {router} from "expo-router";
-import * as SplashScreen from 'expo-splash-screen';
 import { useLoading } from './LoadingContext';
 import ExtendedAuthContextType from '@/types/extendedAuthContextType';
 import OnboardingTrackingType from '@/types/onboardingTrackingType';
@@ -514,6 +512,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         if (userDataString) {
           try {
             const parsedUserData = JSON.parse(userDataString);
+            console.log(parsedUserData);
             setUser(parsedUserData);
           } catch (error) {
             console.error('Error parsing user data:', error);
@@ -610,15 +609,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     loadOnboardingTracking();
   }, []);
 
+  // Suggested fix for your JWT decode function
   const decodeJWT = (token: string): DecodedTokenInfo | null => {
     try {
       // Decode the token using the RawDecodedToken interface
       const decoded = jwtDecode<RawDecodedToken>(token);
       
+      // Extract the custom:userName claim which contains the UUID username
+      const customUserName = decoded['custom:userName'] || '';
+      
       // Map the raw keys to your internal type
       const apiKey = decoded['custom:apiKey'] || '';
       const givenName = decoded['given_name'] || decoded.username || decoded.sub?.substring(0, 8) || 'User';
-      const userName = decoded['cognito:username'] || decoded.username || '';
       
       return {
         email: decoded.email || '',
@@ -627,7 +629,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         gender: decoded.gender,
         birthdate: decoded.birthdate,
         cognito_username: decoded['cognito:username'] || decoded.username,
-        userName: userName,
+        // Use custom:userName as the primary userName value
+        userName: customUserName,
         exp: decoded.exp,
       };
     } catch (error) {

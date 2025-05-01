@@ -140,6 +140,7 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setIsLoading(true);
       
       const data = await GetPotentialMatches(userInfo, authTokens.idToken);
+      console.log(data);
       console.log('Potential matches received:', data?.length || 0);
       
       if (data && Array.isArray(data)) {

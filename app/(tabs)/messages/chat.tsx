@@ -211,14 +211,24 @@ export default function ChatScreen() {
     
     return (
       <View style={[
-        styles.messageBubble,
-        isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage,
-        message.pending && styles.pendingMessage
-      ]}>
-        <Text style={styles.messageText}>
-          {message.content}
-        </Text>
-        <Text style={styles.messageTime}>
+          styles.messageContainer,
+          isCurrentUser ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }
+        ]}>
+    
+        <View style={[
+          styles.messageBubble,
+          isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage,
+          message.pending && styles.pendingMessage
+        ]}>
+          <Text style={styles.messageText}>
+            {message.content}
+          </Text>
+        </View>
+    
+        <Text style={[
+          styles.messageTimestamp,
+          isCurrentUser ? { textAlign: 'right' } : { textAlign: 'left' }
+        ]}>
           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           {message.pending && ' • Sending...'}
         </Text>
@@ -1089,8 +1099,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  // ← This absolute block now spans the full *inner* header area
   headerCenter: {
     position: 'absolute',
     left: 0,
@@ -1101,14 +1109,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: Platform.OS === 'ios'
       ? (isSmallDevice ? 30 : (isLargeDevice ? 50 : 40))
-      : (isSmallDevice ? 25 : 40)
+      : (isSmallDevice ? 25 : 40),
   },
   chatName: {
     fontFamily: 'SF-600',
     fontSize: 20,
     color: '#FFFFFF',
   },
-
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1122,38 +1129,67 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
 
+  // User‐info tappable area in header
   userInfoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chatAvatarContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 10,
-    overflow: 'hidden',
-    backgroundColor: '#333',
-    position: 'relative',
-  },
-  chatAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  chatAvatarLoading: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(51, 51, 51, 0.7)',
-    zIndex: 1,
+
+  // Message wrapper (bubble + timestamp)
+  messageContainer: {
+    maxWidth: '80%',
+    marginHorizontal: 16,
+    marginVertical: 4,
   },
 
-  // Loading and empty states
+  // Message bubbles
+  messageBubble: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  currentUserMessage: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#f44d7b',
+    borderBottomRightRadius: 4,
+  },
+  otherUserMessage: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#333333',
+    borderBottomLeftRadius: 4,
+  },
+  pendingMessage: {
+    opacity: 0.7,
+  },
+  messageText: {
+    fontSize: 16,
+    color: '#fff',
+  },
+  messageTimestamp: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+
+  // Date separators
+  dateSeparator: {
+    alignItems: 'center',
+    marginVertical: 12,
+    paddingHorizontal: 16,
+  },
+  dateSeparatorText: {
+    fontSize: 12,
+    color: '#999',
+    backgroundColor: 'rgba(40, 40, 40, 0.7)',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+
+  // Loading & empty states
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1177,59 +1213,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#cccccc',
     textAlign: 'center',
-  },
-
-  // Message bubbles
-  messageBubble: {
-    maxWidth: '80%',
-    padding: 12,
-    borderRadius: 20,
-    marginHorizontal: 16,
-    marginVertical: 4,
-    position: 'relative',
-    paddingBottom: 22, // Extra padding for the timestamp
-  },
-  currentUserMessage: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#f44d7b',
-    borderBottomRightRadius: 4,
-  },
-  otherUserMessage: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#333333',
-    borderBottomLeftRadius: 4,
-  },
-  pendingMessage: {
-    opacity: 0.7,
-  },
-  messageText: {
-    fontSize: 16,
-    color: '#fff',
-    marginBottom: 4,
-  },
-  messageTime: {
-    fontSize: 11,
-    position: 'absolute',
-    bottom: 4,
-    right: 8,
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontStyle: 'italic',
-  },
-
-  // Date separators
-  dateSeparator: {
-    alignItems: 'center',
-    marginVertical: 12,
-    paddingHorizontal: 16,
-  },
-  dateSeparatorText: {
-    fontSize: 12,
-    color: '#999',
-    backgroundColor: 'rgba(40, 40, 40, 0.7)',
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    overflow: 'hidden',
   },
 
   // Input area
@@ -1262,7 +1245,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#444444',
   },
 
-  // Search functionality
+  // Search bar
   searchContainer: {
     flex: 1,
     backgroundColor: '#333',
@@ -1309,6 +1292,7 @@ const styles = StyleSheet.create({
   },
 });
 
+// Define reload button styles so additionalStyles references resolve
 const additionalStyles = StyleSheet.create({
   reloadButton: {
     backgroundColor: '#f44d7b',

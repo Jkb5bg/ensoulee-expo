@@ -7,40 +7,27 @@ import { useAuth } from '@/components/AuthContext';
 import { GetUserMatches } from '@/api/GetUserMatches';
 import MatchType from '@/types/matchType';
 
-/**
- * NotificationHandler - Manages push notification responses and navigation
- * 
- * Compatible with the existing backend ExpoNotificationService
- */
 const NotificationHandler: React.FC = () => {
-  // References to store notification subscriptions for cleanup
   const notificationListener = useRef<Notifications.Subscription>();
   const responseListener = useRef<Notifications.Subscription>();
-  
-  // Get auth context for user info and API calls
   const { userInfo, authTokens, getValidToken } = useAuth();
 
   useEffect(() => {
-    // Set up notification received listener
-    // This triggers when a notification is received while the app is open
+    // Set up notification received listener (app is open)
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('Notification received in foreground:', notification);
       
-      // Extract and log the notification data
+      // Extract data from the notification
       const data = notification.request.content.data;
       console.log('Notification data:', data);
-      
-      // We could update unread message count or show in-app notification here
     });
 
-    // Set up notification response listener
-    // This triggers when a user taps on a notification
+    // Set up notification response listener (user taps notification)
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('Notification response received:', response);
       handleNotificationResponse(response);
     });
 
-    // Clean up both listeners on unmount
     return () => {
       if (notificationListener.current) {
         Notifications.removeNotificationSubscription(notificationListener.current);
@@ -51,25 +38,21 @@ const NotificationHandler: React.FC = () => {
     };
   }, []);
 
-  /**
-   * Extract data from notification and navigate accordingly
-   */
   const handleNotificationResponse = async (response: Notifications.NotificationResponse) => {
     try {
       // Get data from the notification
       const data = response.notification.request.content.data;
       console.log('Notification data:', data);
 
-      // Check if this is a message notification with a matchId
+      // Check if this is a message notification with a matchId or conversationId
       if (data && (data.matchId || data.conversationId)) {
         const matchId = data.matchId || data.conversationId;
         console.log('Message notification tapped for conversation:', matchId);
         
-        // Initialize match variable with a nullable type
+        // Initialize match variable 
         let match: MatchType | undefined = undefined;
         
-        // We need to get additional information about the match
-        // since the notification might not include sender details
+        // Get additional information about the match if available
         if (userInfo && authTokens?.idToken) {
           try {
             const token = await getValidToken();
@@ -78,10 +61,8 @@ const NotificationHandler: React.FC = () => {
               const matchesResponse = await GetUserMatches(userInfo, token);
               
               if (matchesResponse && Array.isArray(matchesResponse)) {
-                // Cast the response to the expected type (String[] from API -> MatchType[])
-                const matches = matchesResponse as unknown as MatchType[];
-                
                 // Find the match by ID
+                const matches = matchesResponse as unknown as MatchType[];
                 match = matches.find(m => 
                   m.matchId === matchId || m.id === matchId
                 );
@@ -96,14 +77,14 @@ const NotificationHandler: React.FC = () => {
           }
         }
         
-        // Prepare navigation params based on available info
+        // Prepare navigation params
         const navParams: {
           matchId: string;
           userId?: string;
           userName?: string;
           profileImage?: string;
         } = {
-          matchId: matchId as string, // Cast to string if it's not already
+          matchId: matchId as string,
         };
         
         // Add user info if available from the match
