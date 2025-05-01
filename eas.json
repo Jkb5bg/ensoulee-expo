@@ -8,19 +8,31 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "GOOGLE_SERVICES_JSON": "GOOGLE_SERVICES_JSON"
+        "GOOGLE_SERVICES_JSON": "GOOGLE_SERVICES_JSON",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "3v1sslk1vho6atkg9pnjqfkb7d",
+        "EXPO_PUBLIC_USER_POOL_ID": "https://ensoulee.auth.us-east-1.amazoncognito.com",
+        "EXPO_PUBLIC_REDIRECT_URI": "ensoulee://",
+        "EXPO_PUBLIC_ENSOULEE_API_URL": "https://backend.ensoulee.com/dev/"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "GOOGLE_SERVICES_JSON": "GOOGLE_SERVICES_JSON"
+        "GOOGLE_SERVICES_JSON": "GOOGLE_SERVICES_JSON",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "3v1sslk1vho6atkg9pnjqfkb7d",
+        "EXPO_PUBLIC_USER_POOL_ID": "https://ensoulee.auth.us-east-1.amazoncognito.com",
+        "EXPO_PUBLIC_REDIRECT_URI": "ensoulee://",
+        "EXPO_PUBLIC_ENSOULEE_API_URL": "https://backend.ensoulee.com/dev/"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "GOOGLE_SERVICES_JSON": "GOOGLE_SERVICES_JSON"
+        "GOOGLE_SERVICES_JSON": "GOOGLE_SERVICES_JSON",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "3v1sslk1vho6atkg9pnjqfkb7d",
+        "EXPO_PUBLIC_USER_POOL_ID": "https://ensoulee.auth.us-east-1.amazoncognito.com",
+        "EXPO_PUBLIC_REDIRECT_URI": "ensoulee://",
+        "EXPO_PUBLIC_ENSOULEE_API_URL": "https://backend.ensoulee.com/dev/"
       }
     }
   },
