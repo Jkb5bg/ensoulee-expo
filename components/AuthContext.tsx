@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useMemo, useEffect, ReactNo
 import * as WebBrowser from 'expo-web-browser'; 
 import { useAuthRequest, exchangeCodeAsync, revokeAsync, ResponseType, refreshAsync } from 'expo-auth-session'
 import { TokenResponse } from 'expo-auth-session/build/TokenRequest'
-import { Alert, AppState, AppStateStatus } from 'react-native';
+import { Alert, AppState, AppStateStatus, Platform } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import { jwtDecode } from 'jwt-decode';
@@ -48,6 +48,21 @@ const REFRESH_BUFFER_TIME = 86400 - (60 * 60 * 12); // 12 hours
 TaskManager.defineTask(BACKGROUND_REFRESH_TASK, async () => {
   try {
     console.log('[BackgroundFetch] Running token refresh task');
+    
+    // Check if the app is in the foreground
+    if (AppState.currentState === 'active') {
+      console.log('[BackgroundFetch] App is active, skipping background refresh');
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+    
+    // Check if task is still registered
+    const isTaskRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_REFRESH_TASK);
+    if (!isTaskRegistered) {
+      console.log('[BackgroundFetch] Task is no longer registered, stopping execution');
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
+    
+    // Retrieve tokens from secure storage
     const tokensString = await SecureStore.getItemAsync(AUTH_TOKENS_KEY);
     
     if (!tokensString) {
@@ -55,28 +70,41 @@ TaskManager.defineTask(BACKGROUND_REFRESH_TASK, async () => {
       return BackgroundFetch.BackgroundFetchResult.NoData;
     }
     
-    const tokens = JSON.parse(tokensString);
-    const parsedTokens = {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      idToken: tokens.idToken,
-      issuedAt: tokens.issuedAt,
-      expiresIn: tokens.expiresIn,
-    } as TokenResponse;
+    let tokens;
+    try {
+      tokens = JSON.parse(tokensString);
+    } catch (parseError) {
+      console.error('[BackgroundFetch] Error parsing tokens:', parseError);
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
     
-    // Check if token is expired or expiring soon
+    // Validate required token fields
+    if (!tokens.refreshToken || !tokens.issuedAt || !tokens.expiresIn) {
+      console.log('[BackgroundFetch] Missing required token fields');
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
+    
+    // Check if token needs refresh
     const expirationTime = tokens.issuedAt + tokens.expiresIn;
     const currentTime = Date.now() / 1000;
     const shouldRefresh = currentTime > expirationTime - REFRESH_BUFFER_TIME;
     
-    if (shouldRefresh && tokens.refreshToken) {
-      console.log('[BackgroundFetch] Refreshing token');
-      const discoveryDocument = {
-        authorizationEndpoint: userPoolUri + '/oauth2/authorize',
-        tokenEndpoint: userPoolUri + '/oauth2/token',
-        revocationEndpoint: userPoolUri + '/oauth2/revoke',
-      };
-      
+    if (!shouldRefresh) {
+      console.log('[BackgroundFetch] Token doesn\'t need refreshing yet');
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+    
+    console.log('[BackgroundFetch] Refreshing token');
+    
+    // Create discovery document
+    const discoveryDocument = {
+      authorizationEndpoint: userPoolUri + '/oauth2/authorize',
+      tokenEndpoint: userPoolUri + '/oauth2/token',
+      revocationEndpoint: userPoolUri + '/oauth2/revoke',
+    };
+    
+    try {
+      // Attempt to refresh tokens
       const refreshedTokens = await refreshAsync(
         {
           clientId,
@@ -84,19 +112,24 @@ TaskManager.defineTask(BACKGROUND_REFRESH_TASK, async () => {
         },
         discoveryDocument
       );
-
-      const expiresIn = refreshedTokens.expiresIn ?? tokens.expiresIn;
-
       
-      // Save refreshed tokens
+      // Validate refreshed tokens
+      if (!refreshedTokens.accessToken || !refreshedTokens.issuedAt) {
+        throw new Error('Invalid refreshed tokens received');
+      }
+      
+      const expiresIn = refreshedTokens.expiresIn ?? tokens.expiresIn;
+      
+      // Prepare minimal token data for storage
       const minimalTokenData = {
         accessToken: refreshedTokens.accessToken,
         idToken: refreshedTokens.idToken,
-        refreshToken: refreshedTokens.refreshToken,
+        refreshToken: refreshedTokens.refreshToken || tokens.refreshToken, // Fallback to old refresh token if not provided
         issuedAt: refreshedTokens.issuedAt,
-        expiresIn: refreshedTokens.expiresIn,
+        expiresIn: expiresIn,
       };
       
+      // Save refreshed tokens
       await SecureStore.setItemAsync(AUTH_TOKENS_KEY, JSON.stringify(minimalTokenData));
       
       // Update next refresh time
@@ -105,16 +138,26 @@ TaskManager.defineTask(BACKGROUND_REFRESH_TASK, async () => {
       
       console.log('[BackgroundFetch] Token refreshed successfully');
       return BackgroundFetch.BackgroundFetchResult.NewData;
+      
+    } catch (refreshError) {
+      console.error('[BackgroundFetch] Error during token refresh:', refreshError);
+      
+      // If refresh fails due to invalid refresh token, we might need to clear tokens
+      const errorMessage = refreshError instanceof Error ? refreshError.message : String(refreshError);
+      
+      if (errorMessage.includes('invalid_grant') || errorMessage.includes('expired')) {
+        console.log('[BackgroundFetch] Refresh token appears to be invalid or expired');
+        // Don't clear tokens in background task - let the main app handle this
+      }
+      
+      return BackgroundFetch.BackgroundFetchResult.Failed;
     }
     
-    console.log('[BackgroundFetch] Token doesn\'t need refreshing yet');
-    return BackgroundFetch.BackgroundFetchResult.NoData;
   } catch (error) {
-    console.error('[BackgroundFetch] Error refreshing token:', error);
+    console.error('[BackgroundFetch] Task error:', error);
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });
-
 // Create the context with a default value
 const AuthContext = createContext<ExtendedAuthContextType | undefined>(undefined);
 
@@ -161,12 +204,27 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // Register background fetch task
   const registerBackgroundFetch = async () => {
     try {
-      await BackgroundFetch.registerTaskAsync(BACKGROUND_REFRESH_TASK, {
-        minimumInterval: 15 * 60, // 15 minutes
-        stopOnTerminate: false,
-        startOnBoot: true,
-      });
-      console.log('Background fetch task registered');
+      // iOS-specific handling
+      if (Platform.OS === 'ios') {
+        // iOS has stricter background execution limits
+        const status = await BackgroundFetch.getStatusAsync();
+        if (status === BackgroundFetch.BackgroundFetchStatus.Restricted || 
+            status === BackgroundFetch.BackgroundFetchStatus.Denied) {
+          console.log('Background fetch is not available on this device');
+          return;
+        }
+      }
+      
+      const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_REFRESH_TASK);
+      
+      if (!isRegistered) {
+        await BackgroundFetch.registerTaskAsync(BACKGROUND_REFRESH_TASK, {
+          minimumInterval: 15 * 60,
+          stopOnTerminate: false,
+          startOnBoot: true,
+        });
+        console.log('Background fetch task registered');
+      }
     } catch (error) {
       console.error('Error registering background fetch:', error);
     }
@@ -175,8 +233,15 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // Unregister background fetch task
   const unregisterBackgroundFetch = async () => {
     try {
-      await BackgroundFetch.unregisterTaskAsync(BACKGROUND_REFRESH_TASK);
-      console.log('Background fetch task unregistered');
+      // First check if the task is registered
+      const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_REFRESH_TASK);
+      
+      if (isRegistered) {
+        await BackgroundFetch.unregisterTaskAsync(BACKGROUND_REFRESH_TASK);
+        console.log('Background fetch task unregistered');
+      } else {
+        console.log('Background fetch task was not registered, no need to unregister');
+      }
     } catch (error) {
       console.error('Error unregistering background fetch:', error);
     }
@@ -461,6 +526,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       // Clean up on unmount
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
+      }
+      // Only try to unregister if we have tokens (meaning it was registered)
+      if (authTokens) {
+        unregisterBackgroundFetch().catch(error => {
+          console.warn('Cleanup unregister failed:', error);
+        });
       }
     };
   }, [authTokens]);
@@ -757,8 +828,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       refreshTimeoutRef.current = null;
     }
     
-    // Unregister background fetch
-    await unregisterBackgroundFetch();
     
     try {
       // CRITICAL IMPROVEMENT: Update state FIRST before async operations
@@ -767,6 +836,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setUserInfo(null);
       setUser(null);
       setUserProfileImage(null);
+      await unregisterBackgroundFetch();
+
       
       // Clear all storage immediately in a separate try block
       try {
