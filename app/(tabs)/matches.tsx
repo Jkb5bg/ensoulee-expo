@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -28,6 +28,8 @@ export default function MatchesScreen() {
   const { matches, refreshMatches, isLoading, profileImagesCache, loadProfileImage } = useAppData();
   const { authTokens, userInfo } = useAuth();
   const { showLoading, hideLoading } = useLoading();
+  const hasInitiallyLoaded = useRef(false);
+
   
   // Get screen dimensions
   const [dimensions, setDimensions] = useState({
@@ -84,8 +86,9 @@ export default function MatchesScreen() {
 
   // Fetch matches from AppDataContext on component mount if needed
   useEffect(() => {
-    if (matches.length === 0 && !isLoading) {
+    if (!hasInitiallyLoaded.current && matches.length === 0 && !isLoading) {
       refreshMatches();
+      hasInitiallyLoaded.current = true;
     }
   }, [matches.length, isLoading, refreshMatches]);
 

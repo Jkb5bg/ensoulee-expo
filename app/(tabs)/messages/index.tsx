@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -31,6 +31,8 @@ export default function Messages() {
   const { width, height } = Dimensions.get('window');
   const isSmallDevice = height < 700;
   const isLargeDevice = height > 800;
+  const hasFetchedMatches = useRef(false);
+
   
   // Get data from our shared context
   const { matches, refreshMatches, isLoading: isDataLoading } = useAppData();
@@ -44,9 +46,10 @@ export default function Messages() {
 
   // Fetch matches from context if needed on component mount
   useEffect(() => {
-    if (matches.length === 0 && !isDataLoading && userInfo && authTokens?.idToken) {
+    if (!hasFetchedMatches.current && matches.length === 0 && !isDataLoading && userInfo && authTokens?.idToken) {
       console.log('[Messages] Fetching matches on component mount');
       refreshMatches();
+      hasFetchedMatches.current = true;
     }
   }, [matches.length, isDataLoading, refreshMatches, userInfo, authTokens]);
 

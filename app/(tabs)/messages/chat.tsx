@@ -718,18 +718,11 @@ export default function ChatScreen() {
     
     setupInterval();
     
-    // Clean up on unmount
     return () => {
       isMounted = false;
       clearInterval(checkInterval);
-      
-      // Release sync lock if component unmounts during sync
-      if (matchId && isSyncInProgress(matchId)) {
-        setSyncInProgress(matchId, false);
-      }
     };
   }, [checkForUpdates, matchId]);
-
   // Refreshing logic - pull to refresh
   const handleRefresh = useCallback(() => {
     fetchMessages();

@@ -20,6 +20,12 @@ const config: ExpoConfig = {
     ...appJson.expo.android,
     googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? './google-services.json',
   },
+  ios: {
+    ...appJson.expo.ios,
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false
+    }
+  },
   plugins: appJson.expo.plugins?.map((plugin) => {
     if (typeof plugin === 'string' || Array.isArray(plugin)) {
       return plugin;
